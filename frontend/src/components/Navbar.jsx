@@ -72,7 +72,7 @@ export default function Navbar({ studioContext }) {
   const basePath = resolvedSlug ? `/estudios/${resolvedSlug}` : '/';
 
   const navLinks = [
-    { label: 'Home', sectionId: null, href: basePath, show: true },
+    { label: 'Home', sectionId: 'inicio', href: basePath, show: true },
     {
       label: 'Proyectos',
       sectionId: 'proyectos',
@@ -149,6 +149,7 @@ export default function Navbar({ studioContext }) {
           <Link
             className="vertice-navbar__brand"
             to={basePath}
+            onClick={(e) => handleAnchorClick(e, 'inicio')}
             aria-label={`${brandName} — inicio`}
           >
             <span className="vertice-navbar__brand-dot" aria-hidden="true" />

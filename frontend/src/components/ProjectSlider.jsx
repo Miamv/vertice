@@ -285,9 +285,6 @@ export default function ProjectSlider({
     ? buildProjectDetailPath(activeProject, studioSlug)
     : '/';
 
-  const activeBrands = Array.isArray(activeProject?.brands)
-    ? activeProject.brands.filter((b) => b?.name)
-    : [];
   const activeMediaCount = Array.isArray(activeProject?.media)
     ? activeProject.media.length
     : 0;
@@ -433,7 +430,7 @@ export default function ProjectSlider({
                 <p className="vertice-slider__desc">{activeDescription}</p>
               )}
 
-              {(activeLocation || activeBrands.length > 0 || activeMediaCount > 0) && (
+              {(activeLocation || activeMediaCount > 0) && (
                 <div className="vertice-slider__chips">
                   {activeLocation && (
                     <span className="vertice-slider__chip">
@@ -458,12 +455,6 @@ export default function ProjectSlider({
                     <span className="vertice-slider__chip">
                       {activeMediaCount}{' '}
                       {activeMediaCount === 1 ? 'archivo técnico' : 'archivos técnicos'}
-                    </span>
-                  )}
-                  {activeBrands.length > 0 && (
-                    <span className="vertice-slider__chip">
-                      {activeBrands.length}{' '}
-                      {activeBrands.length === 1 ? 'marca asociada' : 'marcas asociadas'}
                     </span>
                   )}
                 </div>

@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import Brand, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
 
 
 class AbsoluteMediaUrlMixin:
@@ -26,14 +26,6 @@ class AbsoluteMediaUrlMixin:
             else:
                 data[field_name] = None
         return data
-
-
-class BrandSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
-    media_fields = ('logo',)
-
-    class Meta:
-        model = Brand
-        fields = ('id', 'name', 'logo')
 
 
 class ProfessionalProfileSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
@@ -92,14 +84,6 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     profile_slug = serializers.ReadOnlyField(source='profile.slug')
     profile_name = serializers.ReadOnlyField(source='profile.name')
-    brands = BrandSerializer(many=True, read_only=True)
-    brand_ids = serializers.PrimaryKeyRelatedField(
-        many=True,
-        write_only=True,
-        queryset=Brand.objects.all(),
-        source='brands',
-        required=False,
-    )
     media = MediaSerializer(many=True, read_only=True)
     cover_image = serializers.SerializerMethodField()
 
@@ -115,8 +99,6 @@ class ProjectSerializer(serializers.ModelSerializer):
             'category',
             'location',
             'google_earth_url',
-            'brands',
-            'brand_ids',
             'media',
             'cover_image',
             'created_at',

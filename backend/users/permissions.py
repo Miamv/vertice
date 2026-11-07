@@ -198,24 +198,6 @@ class CanManageContact(permissions.BasePermission):
         return False
 
 
-class CanManageBrand(permissions.BasePermission):
-    """
-    Catálogo global de marcas (Brand):
-    - Cualquier usuario puede listar o consultar marcas públicamente.
-    - Solo ADMIN de plataforma puede crear, editar o eliminar marcas globales.
-    - Los OWNER asocian marcas existentes a sus proyectos mediante ProjectSerializer.
-    """
-    def has_permission(self, request, view):
-        if view.action in ['list', 'retrieve']:
-            return True
-        return _is_platform_admin(request.user)
-
-    def has_object_permission(self, request, view, obj):
-        if view.action in ['list', 'retrieve']:
-            return True
-        return _is_platform_admin(request.user)
-
-
 class CanManageStudioContent(permissions.BasePermission):
     """
     ADMIN y OWNER pueden gestionar contenido institucional del estudio (Nosotros, Equipo).

@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import Brand, Media, ProfessionalProfile, Project, StudioAbout, TeamMember
+from core.models import Media, ProfessionalProfile, Project, StudioAbout, TeamMember
 
 User = get_user_model()
 
@@ -289,11 +289,6 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual(res_inactive_admin.status_code, status.HTTP_200_OK)
 
     def test_public_endpoints_isolate_data_by_profile_slug_and_reject_cross_studio_project_detail(self):
-        brand_a = Brand.objects.create(name='Marca Estudio Uno')
-        brand_b = Brand.objects.create(name='Marca Estudio Dos')
-        self.project_one.brands.add(brand_a)
-        self.project_two.brands.add(brand_b)
-
         about_a = StudioAbout.objects.create(profile=self.profile, title='Nosotros Uno')
         StudioAbout.objects.create(profile=self.other_profile, title='Nosotros Dos')
 
@@ -317,6 +312,8 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual([p['id'] for p in proj_res.data], [self.project_one.id])
         self.assertEqual(proj_res.data[0]['profile_slug'], 'estudio-uno')
         self.assertEqual(proj_res.data[0]['profile_name'], 'Estudio Uno')
+        self.assertNotIn('brands', proj_res.data[0])
+        self.assertNotIn('brand_ids', proj_res.data[0])
 
         # Detalle de proyecto ajeno bajo profile_slug=estudio-uno devuelve 404
         cross_detail = self.client.get(
@@ -330,7 +327,7 @@ class RolePermissionTestCase(APITestCase):
         )
         self.assertEqual(own_detail.status_code, status.HTTP_200_OK)
 
-        # About, Team, Media y Brands filtrados por profile_slug=estudio-uno
+        # About, Team y Media filtrados por profile_slug=estudio-uno
         about_res = self.client.get('/api/about/?profile_slug=estudio-uno')
         self.assertEqual([a['id'] for a in about_res.data], [about_a.id])
 
@@ -340,44 +337,9 @@ class RolePermissionTestCase(APITestCase):
         media_res = self.client.get('/api/media/?profile_slug=estudio-uno')
         self.assertEqual([m['id'] for m in media_res.data], [media_a.id])
 
-        brands_res = self.client.get('/api/brands/?profile_slug=estudio-uno')
-        self.assertEqual([b['id'] for b in brands_res.data], [brand_a.id])
-
-    def test_global_brand_write_restricted_to_admin_and_owner_can_associate_brand_ids_on_project(self):
-        # 1. OWNER no puede crear, editar ni eliminar marcas globales
-        owner_brand_create = self.client.post(
-            '/api/brands/',
-            {'name': 'Marca Intento Owner'},
-            format='json',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(owner_brand_create.status_code, status.HTTP_403_FORBIDDEN)
-
-        # 2. ADMIN sí puede crear marcas globales
-        admin_brand_create = self.client.post(
-            '/api/brands/',
-            {'name': 'Marca Global Admin'},
-            format='json',
-            **self._auth(self.admin),
-        )
-        self.assertEqual(admin_brand_create.status_code, status.HTTP_201_CREATED)
-        brand_id = admin_brand_create.data['id']
-
-        owner_brand_delete = self.client.delete(
-            f'/api/brands/{brand_id}/',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(owner_brand_delete.status_code, status.HTTP_403_FORBIDDEN)
-
-        # 3. OWNER puede asociar marcas existentes a su propio proyecto mediante `brand_ids`
-        patch_proj = self.client.patch(
-            f'/api/projects/{self.project_one.id}/',
-            {'brand_ids': [brand_id]},
-            format='json',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(patch_proj.status_code, status.HTTP_200_OK)
-        self.assertEqual([b['id'] for b in patch_proj.data['brands']], [brand_id])
+        # El endpoint /api/brands/ fue eliminado definitivamente (404 Not Found)
+        brands_res = self.client.get('/api/brands/')
+        self.assertEqual(brands_res.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_profile_and_studio_content_hardened_permissions(self):
         # 1. OWNER no puede crear ni eliminar un ProfessionalProfile

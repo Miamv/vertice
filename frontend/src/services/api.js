@@ -167,10 +167,6 @@ export function getProfileBySlug(slug) {
   return api.get(`/profiles/by-slug/${encodeURIComponent(slug)}/`);
 }
 
-export function getBrands(params) {
-  return params ? api.get('/brands/', { params }) : api.get('/brands/');
-}
-
 export function getAbout(params) {
   return params ? api.get('/about/', { params }) : api.get('/about/');
 }

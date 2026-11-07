@@ -2,10 +2,9 @@ from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from .models import Brand, Media, ProfessionalProfile, StudioAbout, TeamMember
+from .models import Media, ProfessionalProfile, StudioAbout, TeamMember
 
 TRACKED_FILE_FIELDS = {
-    Brand: ('logo',),
     ProfessionalProfile: ('avatar',),
     Media: ('file',),
     StudioAbout: ('image',),
@@ -45,7 +44,6 @@ def delete_file_if_unreferenced(storage, file_name):
         pass
 
 
-@receiver(pre_save, sender=Brand)
 @receiver(pre_save, sender=ProfessionalProfile)
 @receiver(pre_save, sender=Media)
 @receiver(pre_save, sender=StudioAbout)
@@ -81,7 +79,6 @@ def track_replaced_files_before_save(sender, instance, **kwargs):
     instance._replaced_files = replaced
 
 
-@receiver(post_save, sender=Brand)
 @receiver(post_save, sender=ProfessionalProfile)
 @receiver(post_save, sender=Media)
 @receiver(post_save, sender=StudioAbout)
@@ -101,7 +98,6 @@ def cleanup_replaced_files_after_save(sender, instance, **kwargs):
         )
 
 
-@receiver(post_delete, sender=Brand)
 @receiver(post_delete, sender=ProfessionalProfile)
 @receiver(post_delete, sender=Media)
 @receiver(post_delete, sender=StudioAbout)

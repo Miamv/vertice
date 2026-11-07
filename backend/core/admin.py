@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserCreationForm, UserChangeForm
 from django.utils.html import format_html
-from .models import User, Brand, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import User, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
 
 
 class CustomUserCreationForm(UserCreationForm):
@@ -79,21 +79,6 @@ class StudioScopedAdminMixin:
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
-@admin.register(Brand)
-class BrandAdmin(admin.ModelAdmin):
-    list_display = ('name',)
-    search_fields = ('name',)
-
-    def has_add_permission(self, request):
-        return _is_platform_admin(request.user)
-
-    def has_change_permission(self, request, obj=None):
-        return _is_platform_admin(request.user)
-
-    def has_delete_permission(self, request, obj=None):
-        return _is_platform_admin(request.user)
-
-
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(admin.ModelAdmin):
     list_display = ('name', 'slug', 'specialty', 'contact_email', 'phone', 'is_active', 'created_at')
@@ -149,9 +134,7 @@ class ProjectAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
         'description',
         'location',
         'google_earth_url',
-        'brands',
     )
-    filter_horizontal = ('brands',)
     inlines = [MediaInline]
 
     def get_readonly_fields(self, request, obj=None):

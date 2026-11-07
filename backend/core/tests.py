@@ -8,7 +8,6 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase, RequestFactory, override_settings
 
 from .admin import (
-    BrandAdmin,
     CustomUserCreationForm,
     MediaInline,
     ProfessionalProfileAdmin,
@@ -17,9 +16,8 @@ from .admin import (
     TeamMemberAdmin,
     UserAdmin,
 )
-from .models import User, Brand, ProfessionalProfile, Project, Media, StudioAbout, TeamMember
+from .models import User, ProfessionalProfile, Project, Media, StudioAbout, TeamMember
 from .serializers import (
-    BrandSerializer,
     ProfessionalProfileSerializer,
     ProjectSerializer,
     MediaSerializer,
@@ -149,18 +147,8 @@ class MediaAndProjectSerializerTestCase(TestCase):
         serializer = ProjectSerializer(self.project, context={'request': request})
         self.assertIn('solo_planta.jpg', serializer.data['cover_image'])
 
-    def test_brand_and_profile_serializers_allow_image_upload_and_return_absolute_url(self):
-        request = self.rf.post('/api/brands/')
-        logo_file = SimpleUploadedFile('brand_logo.gif', VALID_GIF, content_type='image/gif')
-        brand_ser = BrandSerializer(
-            data={'name': 'Knoll', 'logo': logo_file},
-            context={'request': request},
-        )
-        self.assertTrue(brand_ser.is_valid(), brand_ser.errors)
-        brand = brand_ser.save()
-        self.assertTrue(bool(brand.logo))
-        self.assertIn('http://testserver/media/brands/', brand_ser.data['logo'])
-
+    def test_profile_serializer_allows_image_upload_and_returns_absolute_url(self):
+        request = self.rf.post('/api/profiles/')
         avatar_file = SimpleUploadedFile('hero_studio.gif', VALID_GIF, content_type='image/gif')
         prof_ser = ProfessionalProfileSerializer(
             instance=self.profile,
@@ -284,37 +272,47 @@ class MediaAndProjectSerializerTestCase(TestCase):
         self.assertFalse(storage.exists(saved_path))
 
         # 2. Verificar reemplazo de archivo en actualización (borra el viejo y conserva el nuevo)
-        f_old = SimpleUploadedFile('old_logo.gif', VALID_GIF, content_type='image/gif')
-        brand = Brand.objects.create(name='Marca Test', logo=f_old)
-        old_logo_path = brand.logo.name
-        self.assertTrue(brand.logo.storage.exists(old_logo_path))
+        f_old = SimpleUploadedFile('old_avatar.gif', VALID_GIF, content_type='image/gif')
+        member = TeamMember.objects.create(
+            profile=self.profile,
+            full_name='Integrante Test',
+            role='Arquitecto',
+            avatar=f_old,
+        )
+        old_avatar_path = member.avatar.name
+        self.assertTrue(member.avatar.storage.exists(old_avatar_path))
 
-        f_new = SimpleUploadedFile('new_logo.gif', VALID_GIF, content_type='image/gif')
+        f_new = SimpleUploadedFile('new_avatar.gif', VALID_GIF, content_type='image/gif')
         with self.captureOnCommitCallbacks(execute=True):
-            brand.logo = f_new
-            brand.save()
+            member.avatar = f_new
+            member.save()
 
-        new_logo_path = brand.logo.name
-        self.assertFalse(brand.logo.storage.exists(old_logo_path))
-        self.assertTrue(brand.logo.storage.exists(new_logo_path))
+        new_avatar_path = member.avatar.name
+        self.assertFalse(member.avatar.storage.exists(old_avatar_path))
+        self.assertTrue(member.avatar.storage.exists(new_avatar_path))
 
         # 3. Verificar que si dos registros apuntan al mismo archivo, borrar uno NO borra el archivo físico
-        brand_clon = Brand.objects.create(name='Marca Clon', logo=new_logo_path)
+        member_clon = TeamMember.objects.create(
+            profile=self.profile,
+            full_name='Integrante Clon',
+            role='Renderista',
+            avatar=new_avatar_path,
+        )
         with self.captureOnCommitCallbacks(execute=True):
-            brand_clon.delete()
+            member_clon.delete()
 
-        self.assertTrue(brand.logo.storage.exists(new_logo_path))
+        self.assertTrue(member.avatar.storage.exists(new_avatar_path))
 
         # 4. Verificar que si una transacción hace rollback, el archivo anterior NO se elimina
-        f_rollback = SimpleUploadedFile('rollback_logo.gif', VALID_GIF, content_type='image/gif')
+        f_rollback = SimpleUploadedFile('rollback_avatar.gif', VALID_GIF, content_type='image/gif')
         try:
             with transaction.atomic():
-                brand.logo = f_rollback
-                brand.save()
+                member.avatar = f_rollback
+                member.save()
                 raise RuntimeError('Forzar rollback')
         except RuntimeError:
             pass
-        self.assertTrue(brand.logo.storage.exists(new_logo_path))
+        self.assertTrue(member.avatar.storage.exists(new_avatar_path))
 
     def test_media_empty_plan_type_normalized_to_none(self):
         media_item = Media.objects.create(
@@ -427,7 +425,7 @@ class MultiStudioDomainAndAdminTestCase(TestCase):
         with self.assertRaises(ValidationError):
             member_without_profile.full_clean()
 
-    def test_django_admin_isolation_by_studio_and_brand_permissions(self):
+    def test_django_admin_isolation_by_studio_and_permissions(self):
         proj_a = Project.objects.create(
             profile=self.studio_a,
             title='Casa Norte',
@@ -455,15 +453,11 @@ class MultiStudioDomainAndAdminTestCase(TestCase):
         proj_admin = ProjectAdmin(Project, self.site)
         about_admin = StudioAboutAdmin(StudioAbout, self.site)
         team_admin = TeamMemberAdmin(TeamMember, self.site)
-        brand_admin = BrandAdmin(Brand, self.site)
 
         # 1. Plataforma ADMIN ve todos los estudios y recursos
         self.assertEqual(prof_admin.get_queryset(req_admin).count(), 2)
         self.assertEqual(proj_admin.get_queryset(req_admin).count(), 2)
         self.assertTrue(prof_admin.has_add_permission(req_admin))
-        self.assertTrue(brand_admin.has_add_permission(req_admin))
-        self.assertTrue(brand_admin.has_change_permission(req_admin))
-        self.assertTrue(brand_admin.has_delete_permission(req_admin))
 
         # 2. OWNER A solo ve su propio estudio y sus propios proyectos, about y equipo
         self.assertEqual(list(prof_admin.get_queryset(req_owner_a)), [self.studio_a])
@@ -474,10 +468,7 @@ class MultiStudioDomainAndAdminTestCase(TestCase):
         self.assertEqual(list(team_admin.get_queryset(req_owner_a)), [member_a])
         self.assertNotIn(member_b, team_admin.get_queryset(req_owner_a))
 
-        # 3. OWNER A no puede crear ni eliminar estudios, ni editar membresías (`users`), ni modificar marcas globales
+        # 3. OWNER A no puede crear ni eliminar estudios, ni editar membresías (`users`)
         self.assertFalse(prof_admin.has_add_permission(req_owner_a))
         self.assertFalse(prof_admin.has_delete_permission(req_owner_a, self.studio_a))
         self.assertIn('users', prof_admin.get_readonly_fields(req_owner_a, self.studio_a))
-        self.assertFalse(brand_admin.has_add_permission(req_owner_a))
-        self.assertFalse(brand_admin.has_change_permission(req_owner_a))
-        self.assertFalse(brand_admin.has_delete_permission(req_owner_a))

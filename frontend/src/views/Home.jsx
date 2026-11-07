@@ -1,9 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { Link, useLocation, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import Hero from '../components/Hero';
 import About from '../components/About';
 import Team from '../components/Team';
-import BrandsCarousel from '../components/BrandsCarousel';
 import ProjectSlider from '../components/ProjectSlider';
 import ContactSection from '../components/ContactSection';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -13,6 +12,7 @@ import useStudioPortfolio from '../hooks/useStudioPortfolio';
 export default function Home() {
   const { slug } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const outletContext = useOutletContext();
   const setStudioContext = outletContext?.setStudioContext;
   const { user } = useAuth();
@@ -27,12 +27,10 @@ export default function Home() {
     ownStudio,
     availableStudios,
     projects,
-    brands,
     aboutData,
     teamMembers,
     profileError,
     projectsError,
-    brandsError,
     aboutError,
     teamError,
     reload,
@@ -74,19 +72,34 @@ export default function Home() {
     }
   }, [profile, notFound]);
 
-  // Desplazamiento suave si la URL incluye un hash (#nosotros, #proyectos, #contacto, etc.)
+  // Al cargar o recargar la portada, asegura iniciar al principio de la página (Hero)
+  // salvo cuando se navega explícitamente desde otra vista hacia una sección puntual.
   useEffect(() => {
-    if (loading || !location.hash) return;
-    const targetId = location.hash.replace(/^#/, '');
-    if (!targetId) return;
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+    if (!location.state?.scrollToSection) {
+      if (location.hash) {
+        navigate(location.pathname, { replace: true });
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, loading]);
+
+  // Si se navegó desde otra ruta hacia una sección específica, desplaza suavemente al terminar de cargar
+  useEffect(() => {
+    const targetId = location.state?.scrollToSection;
+    if (loading || !targetId) return;
     const timer = setTimeout(() => {
       const el = document.getElementById(targetId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
       }
+      navigate(location.pathname, { replace: true, state: {} });
     }, 80);
     return () => clearTimeout(timer);
-  }, [loading, location.hash, profile?.slug]);
+  }, [loading, location.state?.scrollToSection, location.pathname, navigate]);
 
   // Efecto de aparición progresiva al desplazarse hacia abajo por las secciones de la Home
   useEffect(() => {
@@ -112,7 +125,7 @@ export default function Home() {
 
     elements.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [loading, profile, projects.length, brands.length, teamMembers.length]);
+  }, [loading, profile, projects.length, teamMembers.length]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -230,9 +243,6 @@ export default function Home() {
     <>
       <Hero profile={profile} />
       <div className="vertice-reveal" data-scroll-reveal>
-        <About data={aboutData} profile={profile} error={aboutError} hasTeam={hasTeam} />
-      </div>
-      <div className="vertice-reveal" data-scroll-reveal>
         <ProjectSlider
           projects={projects}
           error={projectsError}
@@ -242,7 +252,7 @@ export default function Home() {
         />
       </div>
       <div className="vertice-reveal" data-scroll-reveal>
-        <BrandsCarousel brands={brands} error={brandsError} />
+        <About data={aboutData} profile={profile} error={aboutError} hasTeam={hasTeam} />
       </div>
       <div className="vertice-reveal" data-scroll-reveal>
         <Team members={teamMembers} error={teamError} />

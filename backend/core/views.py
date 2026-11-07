@@ -3,9 +3,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from .models import Brand, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
 from .serializers import (
-    BrandSerializer,
     ProfessionalProfileSerializer,
     ProjectSerializer,
     MediaSerializer,
@@ -18,7 +17,6 @@ from users.permissions import (
     CanUploadMedia,
     CanManageProfile,
     CanManageContact,
-    CanManageBrand,
     CanManageStudioContent,
 )
 
@@ -54,30 +52,6 @@ def _filter_by_profile_params(qs, request, prefix='profile'):
             return qs.none()
 
     return qs
-
-
-class BrandViewSet(viewsets.ModelViewSet):
-    queryset = Brand.objects.all().order_by('id')
-    serializer_class = BrandSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        profile_slug = self.request.query_params.get('profile_slug')
-        profile_id = self.request.query_params.get('profile')
-
-        if profile_slug or (profile_id is not None and profile_id != ''):
-            if not _is_platform_admin(self.request.user):
-                qs = qs.filter(projects__profile__is_active=True)
-            if _is_studio_member_role(self.request.user):
-                qs = qs.filter(projects__profile__users=self.request.user)
-            qs = _filter_by_profile_params(qs, self.request, prefix='projects__profile').distinct()
-
-        return qs
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [CanManageBrand()]
 
 
 class ProfessionalProfileViewSet(viewsets.ModelViewSet):
@@ -155,7 +129,7 @@ class ProfessionalProfileViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.select_related('profile').prefetch_related('media', 'brands').order_by('-created_at')
+    queryset = Project.objects.select_related('profile').prefetch_related('media').order_by('-created_at')
     serializer_class = ProjectSerializer
 
     def get_queryset(self):

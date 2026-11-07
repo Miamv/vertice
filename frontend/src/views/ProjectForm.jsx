@@ -5,7 +5,6 @@ import {
   createProject,
   updateProject,
   getProfiles,
-  getBrands,
   getMedia,
   createMedia,
   updateMedia,
@@ -69,11 +68,9 @@ export default function ProjectForm() {
     location: '',
     google_earth_url: '',
     profile: activeStudio?.id || '',
-    brand_ids: [],
   });
 
   const [profiles, setProfiles] = useState([]);
-  const [allBrands, setAllBrands] = useState([]);
   const [existingMedia, setExistingMedia] = useState([]);
   const [pendingMedia, setPendingMedia] = useState([]);
 
@@ -108,9 +105,8 @@ export default function ProjectForm() {
       setLoading(true);
       setError(null);
       try {
-        const [profilesRes, brandsRes, projectRes] = await Promise.all([
+        const [profilesRes, projectRes] = await Promise.all([
           getProfiles(!isAdmin ? { mine: 1 } : undefined),
-          getBrands(),
           isEditing ? getProject(id) : Promise.resolve(null),
         ]);
 
@@ -121,16 +117,8 @@ export default function ProjectForm() {
           : (profilesRes.data?.results ?? []);
         setProfiles(profilesData);
 
-        const brandsData = Array.isArray(brandsRes.data)
-          ? brandsRes.data
-          : (brandsRes.data?.results ?? []);
-        setAllBrands(brandsData);
-
         if (isEditing && projectRes) {
           const p = projectRes.data;
-          const currentBrandIds = Array.isArray(p.brands)
-            ? p.brands.map((b) => b.id)
-            : [];
           setFormData({
             title: p.title || '',
             description: p.description || '',
@@ -138,7 +126,6 @@ export default function ProjectForm() {
             location: p.location || '',
             google_earth_url: p.google_earth_url || '',
             profile: p.profile || activeStudio?.id || (profilesData[0]?.id ?? ''),
-            brand_ids: currentBrandIds,
           });
 
           let mediaItems = Array.isArray(p.media) ? p.media : null;
@@ -201,16 +188,6 @@ export default function ProjectForm() {
     if (fieldErrors[name]) {
       setFieldErrors((prev) => ({ ...prev, [name]: null }));
     }
-  }
-
-  function handleToggleBrand(brandId) {
-    setFormData((prev) => {
-      const exists = prev.brand_ids.includes(brandId);
-      const next = exists
-        ? prev.brand_ids.filter((bId) => bId !== brandId)
-        : [...prev.brand_ids, brandId];
-      return { ...prev, brand_ids: next };
-    });
   }
 
   function handleDraftFileChange(e) {
@@ -420,7 +397,6 @@ export default function ProjectForm() {
       location: formData.location.trim(),
       google_earth_url: formData.google_earth_url.trim(),
       profile: Number(formData.profile),
-      brand_ids: formData.brand_ids,
     };
 
     try {
@@ -683,33 +659,6 @@ export default function ProjectForm() {
                 )}
               </div>
             </div>
-
-            {isAdminOrOwner && allBrands.length > 0 && (
-              <div className="mb-4">
-                <label className="form-label small fw-semibold d-block mb-2">
-                  Marcas y Proveedores Asociados (Opcional)
-                </label>
-                <div className="d-flex flex-wrap gap-2">
-                  {allBrands.map((brand) => {
-                    const selected = formData.brand_ids.includes(brand.id);
-                    return (
-                      <button
-                        key={brand.id}
-                        type="button"
-                        onClick={() => handleToggleBrand(brand.id)}
-                        disabled={submitting}
-                        className={`btn btn-sm rounded-pill px-3 ${
-                          selected ? 'btn-dark' : 'btn-outline-secondary'
-                        }`}
-                      >
-                        {selected ? '✓ ' : '+ '}
-                        {brand.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
             <div className="mt-4 pt-4 border-top">
               <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">

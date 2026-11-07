@@ -53,7 +53,7 @@ export default function ContactSection({
                 {email && <a href={`mailto:${email}`}>{email}</a>}
               </div>
             ) : (
-              <p className="text-muted small mb-0">
+              <p className="vertice-contact__fallback mb-0">
                 Completá el formulario para enviar tu consulta directamente al equipo del estudio.
               </p>
             )}

@@ -7,14 +7,6 @@ from django.db import models
 from django.utils.text import slugify
 
 
-class Brand(models.Model):
-    name = models.CharField(max_length=100)
-    logo = models.ImageField(upload_to='brands/', blank=True)
-
-    def __str__(self):
-        return self.name
-
-
 class User(AbstractUser):
     class RoleChoices(models.TextChoices):
         ADMIN = 'ADMIN', 'Administrador'
@@ -95,7 +87,6 @@ class Project(models.Model):
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     location = models.CharField(max_length=200, blank=True)
     google_earth_url = models.URLField(max_length=500, blank=True)
-    brands = models.ManyToManyField(Brand, blank=True, related_name='projects')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

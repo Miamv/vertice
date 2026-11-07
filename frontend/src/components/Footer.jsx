@@ -35,6 +35,7 @@ export default function Footer({ studioContext }) {
             <Link
               to={basePath}
               className="vertice-footer__brand-lockup"
+              onClick={(e) => handleSectionClick(e, 'inicio')}
               aria-label={`${brandName} inicio`}
             >
               <span className="vertice-navbar__brand-dot" aria-hidden="true" />
@@ -49,7 +50,12 @@ export default function Footer({ studioContext }) {
             <p className="vertice-footer__heading">Navegación</p>
             <ul className="vertice-footer__list">
               <li>
-                <Link to={basePath}>Home</Link>
+                <a
+                  href={basePath}
+                  onClick={(e) => handleSectionClick(e, 'inicio')}
+                >
+                  Home
+                </a>
               </li>
               <li>
                 <a
