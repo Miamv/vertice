@@ -163,7 +163,11 @@ export default function ProjectDetail() {
   const normalizedProject = useMemo(() => {
     if (!project) return null;
     const defaultLocation =
-      project.ubicacionTexto || project.profile_name || studio.defaultLocation;
+      project.location?.trim() ||
+      project.ubicacionTexto ||
+      project.profile_name ||
+      studio.defaultLocation;
+    const customEarthUrl = project.google_earth_url?.trim() || project.googleEarthUrl || '';
     return {
       ...project,
       titulo: projectTitle,
@@ -172,7 +176,7 @@ export default function ProjectDetail() {
       memoriaDescriptiva: projectDescription,
       ubicacionTexto: defaultLocation,
       googleEarthUrl:
-        project.googleEarthUrl ||
+        customEarthUrl ||
         studio.buildGoogleEarthSearchUrl(`${projectTitle} ${defaultLocation}`),
       specs: project.specs || null,
     };

@@ -93,6 +93,8 @@ class Project(models.Model):
     title = models.CharField(max_length=150)
     description = models.TextField()
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    location = models.CharField(max_length=200, blank=True)
+    google_earth_url = models.URLField(max_length=500, blank=True)
     brands = models.ManyToManyField(Brand, blank=True, related_name='projects')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

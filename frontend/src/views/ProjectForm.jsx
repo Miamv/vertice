@@ -66,6 +66,8 @@ export default function ProjectForm() {
     title: '',
     description: '',
     category: 'architecture',
+    location: '',
+    google_earth_url: '',
     profile: activeStudio?.id || '',
     brand_ids: [],
   });
@@ -133,6 +135,8 @@ export default function ProjectForm() {
             title: p.title || '',
             description: p.description || '',
             category: p.category || 'architecture',
+            location: p.location || '',
+            google_earth_url: p.google_earth_url || '',
             profile: p.profile || activeStudio?.id || (profilesData[0]?.id ?? ''),
             brand_ids: currentBrandIds,
           });
@@ -413,6 +417,8 @@ export default function ProjectForm() {
       title: formData.title.trim(),
       description: formData.description.trim(),
       category: formData.category,
+      location: formData.location.trim(),
+      google_earth_url: formData.google_earth_url.trim(),
       profile: Number(formData.profile),
       brand_ids: formData.brand_ids,
     };
@@ -622,6 +628,62 @@ export default function ProjectForm() {
               )}
             </div>
 
+            <div className="row g-3 mb-3">
+              <div className="col-md-5">
+                <label htmlFor="location" className="form-label small fw-semibold">
+                  Ubicación de la Obra (Opcional)
+                </label>
+                <input
+                  type="text"
+                  id="location"
+                  name="location"
+                  className={`form-control rounded-3 ${fieldErrors.location ? 'is-invalid' : ''}`}
+                  value={formData.location}
+                  onChange={handleChange}
+                  placeholder="Ej. Chacras de Coria, Mendoza"
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.location ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.location)
+                      ? fieldErrors.location.join(' ')
+                      : fieldErrors.location}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.73rem' }}>
+                    Texto visible en la pestaña Ubicación del visor.
+                  </div>
+                )}
+              </div>
+
+              <div className="col-md-7">
+                <label htmlFor="google_earth_url" className="form-label small fw-semibold">
+                  Enlace de Ubicación — Google Maps / Earth (Opcional)
+                </label>
+                <input
+                  type="url"
+                  id="google_earth_url"
+                  name="google_earth_url"
+                  className={`form-control rounded-3 ${fieldErrors.google_earth_url ? 'is-invalid' : ''}`}
+                  value={formData.google_earth_url}
+                  onChange={handleChange}
+                  placeholder="https://maps.google.com/... o https://earth.google.com/..."
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.google_earth_url ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.google_earth_url)
+                      ? fieldErrors.google_earth_url.join(' ')
+                      : fieldErrors.google_earth_url}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.73rem' }}>
+                    Enlace que abrirá el botón &ldquo;Ver ubicación&rdquo; del proyecto.
+                  </div>
+                )}
+              </div>
+            </div>
+
             {isAdminOrOwner && allBrands.length > 0 && (
               <div className="mb-4">
                 <label className="form-label small fw-semibold d-block mb-2">
@@ -722,7 +784,7 @@ export default function ProjectForm() {
 
                   <div className="col-6 col-md-4">
                     <label htmlFor="draftPlanType" className="form-label small fw-semibold mb-1">
-                      Categoría de Plano (<code>plan_type</code>)
+                      Categoría de Plano
                     </label>
                     <select
                       id="draftPlanType"

@@ -648,8 +648,12 @@ export default function AdminDashboard() {
               type="button"
               className="btn btn-dark rounded-pill px-4 py-2 fw-semibold d-inline-flex align-items-center gap-2"
               onClick={() => {
+                const nextOrder =
+                  team.length > 0
+                    ? Math.max(...team.map((m) => Number(m.order) || 0)) + 1
+                    : 1;
                 setEditingMember(null);
-                setMemberForm({ full_name: '', role: '', order: team.length });
+                setMemberForm({ full_name: '', role: '', order: nextOrder });
                 setMemberAvatarFile(null);
                 setShowMemberForm(true);
               }}
@@ -947,10 +951,14 @@ export default function AdminDashboard() {
                     <label className="form-label small fw-semibold">Orden Visual</label>
                     <input
                       type="number"
+                      min="1"
                       className="form-control rounded-3"
                       value={memberForm.order}
-                      onChange={(e) => setMemberForm({ ...memberForm, order: parseInt(e.target.value, 10) || 0 })}
+                      onChange={(e) => setMemberForm({ ...memberForm, order: parseInt(e.target.value, 10) || 1 })}
                     />
+                    <div className="form-text" style={{ fontSize: '0.7rem' }}>
+                      1 = 1°, 2 = 2°...
+                    </div>
                   </div>
 
                   <div className="col-12">
@@ -1013,7 +1021,7 @@ export default function AdminDashboard() {
                 className="btn btn-dark rounded-pill px-4 py-2 fw-semibold"
                 onClick={() => {
                   setEditingMember(null);
-                  setMemberForm({ full_name: '', role: '', order: 0 });
+                  setMemberForm({ full_name: '', role: '', order: 1 });
                   setMemberAvatarFile(null);
                   setShowMemberForm(true);
                 }}

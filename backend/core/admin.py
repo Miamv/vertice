@@ -139,11 +139,31 @@ class MediaInline(admin.TabularInline):
 
 @admin.register(Project)
 class ProjectAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
-    list_display = ('title', 'profile', 'category', 'created_at')
+    list_display = ('title', 'profile', 'category', 'location', 'google_earth_url', 'created_at')
     list_filter = ('profile', 'category', 'created_at')
-    search_fields = ('title',)
+    search_fields = ('title', 'location')
+    fields = (
+        'profile',
+        'title',
+        'category',
+        'description',
+        'location',
+        'google_earth_url',
+        'brands',
+    )
     filter_horizontal = ('brands',)
     inlines = [MediaInline]
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = list(super().get_readonly_fields(request, obj))
+        is_owner_or_admin = _is_platform_admin(request.user) or (
+            request.user.is_authenticated and getattr(request.user, 'role', None) == User.RoleChoices.OWNER
+        )
+        if not is_owner_or_admin:
+            for field_name in ('location', 'google_earth_url'):
+                if field_name not in readonly:
+                    readonly.append(field_name)
+        return tuple(readonly)
 
 
 @admin.register(Media)

@@ -80,14 +80,6 @@ export default function ProjectSheet({ project, state, onCollapse }) {
           aria-label="Arrastrar hacia abajo para cerrar"
         >
           <span className="pv-sheet__handle pv-sheet__handle--grip" aria-hidden="true" />
-          <button
-            type="button"
-            className="pv-sheet__close-btn"
-            onClick={onCollapse}
-            aria-label="Cerrar memoria descriptiva"
-          >
-            ✕
-          </button>
         </div>
 
         <div className="pv-sheet__scroll">

@@ -39,7 +39,7 @@ export default function ProjectLocation({ project, onSwipeUp }) {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Abrir en Google Earth
+          Ver ubicación
         </a>
       </div>
     </div>

@@ -113,6 +113,8 @@ class ProjectSerializer(serializers.ModelSerializer):
             'title',
             'description',
             'category',
+            'location',
+            'google_earth_url',
             'brands',
             'brand_ids',
             'media',

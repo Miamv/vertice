@@ -646,5 +646,54 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual(self.profile.specialty, 'Actualizado por ID sin colisión')
         self.assertEqual(numeric_studio.specialty, '')
 
+    def test_project_google_earth_and_location_managed_only_by_admin_and_own_studio_owner(self):
+        # 1. OWNER de su propio estudio puede actualizar location y google_earth_url
+        owner_res = self.client.patch(
+            f'/api/projects/{self.project_one.id}/',
+            {
+                'location': 'Chacras de Coria, Mendoza',
+                'google_earth_url': 'https://earth.google.com/web/search/Chacras+de+Coria',
+            },
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_res.data['location'], 'Chacras de Coria, Mendoza')
+        self.assertEqual(
+            owner_res.data['google_earth_url'],
+            'https://earth.google.com/web/search/Chacras+de+Coria',
+        )
+
+        # 2. COLLABORATOR del mismo estudio NO puede modificar google_earth_url ni location (403)
+        collab_res = self.client.patch(
+            f'/api/projects/{self.project_one.id}/',
+            {'google_earth_url': 'https://earth.google.com/web/search/Otro+Lugar'},
+            format='json',
+            **self._auth(self.collab_one),
+        )
+        self.assertEqual(collab_res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. OWNER no puede modificar google_earth_url de un proyecto ajeno (403)
+        foreign_owner_res = self.client.patch(
+            f'/api/projects/{self.project_two.id}/',
+            {'google_earth_url': 'https://earth.google.com/web/search/Intruso'},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(foreign_owner_res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. ADMIN puede modificar google_earth_url de cualquier proyecto
+        admin_res = self.client.patch(
+            f'/api/projects/{self.project_two.id}/',
+            {
+                'location': 'Bariloche, Río Negro',
+                'google_earth_url': 'https://earth.google.com/web/search/Bariloche',
+            },
+            format='json',
+            **self._auth(self.admin),
+        )
+        self.assertEqual(admin_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(admin_res.data['location'], 'Bariloche, Río Negro')
+
 
 

@@ -85,7 +85,16 @@ class CanManageProject(permissions.BasePermission):
 
         # Si en un update/partial_update se envía `profile`, verificar que pertenezca al usuario
         if view.action in ['update', 'partial_update'] and 'profile' in request.data:
-            return _user_owns_profile(request.user, request.data.get('profile'))
+            if not _user_owns_profile(request.user, request.data.get('profile')):
+                return False
+
+        # La administración de Ubicación y Google Earth está reservada a ADMIN y OWNER del estudio
+        if (
+            view.action in ['update', 'partial_update']
+            and request.user.role == User.RoleChoices.COLLABORATOR
+            and ('google_earth_url' in request.data or 'location' in request.data)
+        ):
+            return False
 
         return True
 
