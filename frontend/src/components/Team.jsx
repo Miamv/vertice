@@ -15,12 +15,13 @@ function AvatarPlaceholder({ name }) {
       style={{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        background: 'linear-gradient(135deg, #1d2b5c 0%, #111b3e 100%)',
         color: '#fff',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontWeight: 'bold',
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
         fontSize: '1.25rem',
         letterSpacing: '0.05em',
       }}
@@ -41,7 +42,8 @@ export default function Team({ members = [], error }) {
   }
 
   return (
-    <section id="equipo" className="vertice-team">
+    <section id="nosotros" className="vertice-team">
+      <span id="equipo" aria-hidden="true" />
       <div className="container">
         <h3 className="vertice-team__title">Nuestro equipo</h3>
         {!hasMembers ? (

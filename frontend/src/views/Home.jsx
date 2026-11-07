@@ -4,7 +4,7 @@ import Hero from '../components/Hero';
 import About from '../components/About';
 import Team from '../components/Team';
 import BrandsCarousel from '../components/BrandsCarousel';
-import ProjectCards from '../components/ProjectCards';
+import ProjectSlider from '../components/ProjectSlider';
 import ContactSection from '../components/ContactSection';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -87,6 +87,32 @@ export default function Home() {
     }, 80);
     return () => clearTimeout(timer);
   }, [loading, location.hash, profile?.slug]);
+
+  // Efecto de aparición progresiva al desplazarse hacia abajo por las secciones de la Home
+  useEffect(() => {
+    if (loading || !profile) return;
+    const elements = document.querySelectorAll('[data-scroll-reveal]');
+    if (!elements.length) return;
+
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+      elements.forEach((el) => el.classList.add('is-revealed'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-revealed');
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -48px 0px' }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [loading, profile, projects.length, brands.length, teamMembers.length]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -203,20 +229,31 @@ export default function Home() {
   return (
     <>
       <Hero profile={profile} />
-      <About data={aboutData} profile={profile} error={aboutError} />
-      <Team members={teamMembers} error={teamError} />
-      <BrandsCarousel brands={brands} error={brandsError} />
-      <ProjectCards
-        projects={projects}
-        error={projectsError}
-        onRetry={reload}
-        studioSlug={profile.slug}
-      />
-      <ContactSection
-        title="Contanos tu proyecto"
-        profile={profile}
-        profileId={profile.id}
-      />
+      <div className="vertice-reveal" data-scroll-reveal>
+        <About data={aboutData} profile={profile} error={aboutError} hasTeam={hasTeam} />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <ProjectSlider
+          projects={projects}
+          error={projectsError}
+          onRetry={reload}
+          studioSlug={profile.slug}
+          studioName={profile.name}
+        />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <BrandsCarousel brands={brands} error={brandsError} />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <Team members={teamMembers} error={teamError} />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <ContactSection
+          title="Contanos tu proyecto"
+          profile={profile}
+          profileId={profile.id}
+        />
+      </div>
     </>
   );
 }

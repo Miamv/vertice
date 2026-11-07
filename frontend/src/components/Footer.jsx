@@ -37,13 +37,7 @@ export default function Footer({ studioContext }) {
               className="vertice-footer__brand-lockup"
               aria-label={`${brandName} inicio`}
             >
-              <span className="vertice-footer__mark" aria-hidden="true">
-                <svg width="28" height="22" viewBox="0 0 98 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 68 V18 L28 8 L28 68" stroke="currentColor" strokeWidth="2.6" fill="none" />
-                  <path d="M26 68 V28 L44 16 L44 68" stroke="currentColor" strokeWidth="2.6" fill="none" />
-                  <path d="M42 68 V38 L60 26 L60 68" stroke="currentColor" strokeWidth="2.6" fill="none" />
-                </svg>
-              </span>
+              <span className="vertice-navbar__brand-dot" aria-hidden="true" />
               <span>{brandName}</span>
             </Link>
             {specialty && (
@@ -57,7 +51,15 @@ export default function Footer({ studioContext }) {
               <li>
                 <Link to={basePath}>Home</Link>
               </li>
-              {(!activeProfile || studioContext?.hasAbout) && (
+              <li>
+                <a
+                  href={`${basePath}#proyectos`}
+                  onClick={(e) => handleSectionClick(e, 'proyectos')}
+                >
+                  Proyectos
+                </a>
+              </li>
+              {(!activeProfile || studioContext?.hasTeam || studioContext?.hasAbout) && (
                 <li>
                   <a
                     href={`${basePath}#nosotros`}
@@ -67,24 +69,6 @@ export default function Footer({ studioContext }) {
                   </a>
                 </li>
               )}
-              {activeProfile && studioContext?.hasTeam && (
-                <li>
-                  <a
-                    href={`${basePath}#equipo`}
-                    onClick={(e) => handleSectionClick(e, 'equipo')}
-                  >
-                    Equipo
-                  </a>
-                </li>
-              )}
-              <li>
-                <a
-                  href={`${basePath}#proyectos`}
-                  onClick={(e) => handleSectionClick(e, 'proyectos')}
-                >
-                  Proyectos
-                </a>
-              </li>
               <li>
                 <a
                   href={`${basePath}#contacto`}

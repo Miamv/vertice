@@ -1127,7 +1127,7 @@ export default function AdminDashboard() {
               Configuración Institucional — {activeProfile.name}
             </h2>
             <p className="text-muted small mb-0">
-              Modifica el título, el manifiesto y el boceto arquitectónico lateral que se muestra en la sección &ldquo;Nosotros&rdquo; de {activeProfile.name}.
+              Modifica el título, el manifiesto y la imagen panorámica de fondo que se muestra en la sección &ldquo;Nosotros&rdquo; de {activeProfile.name}.
             </p>
           </div>
 
@@ -1163,7 +1163,7 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold">Boceto Arquitectónico Lateral (Imagen)</label>
+                  <label className="form-label small fw-semibold">Imagen de Fondo de la Sección (Panorámica)</label>
                   <input
                     type="file"
                     accept="image/*"
@@ -1171,22 +1171,22 @@ export default function AdminDashboard() {
                     onChange={(e) => setAboutImageFile(e.target.files[0] || null)}
                   />
                   <small className="text-muted d-block mt-1">
-                    Formatos recomendados: JPG, PNG o WebP. Se adapta al marco técnico de la sección.
+                    Formatos recomendados: JPG, PNG o WebP horizontal. Si no tiene imagen, se mantiene el fondo institucional del estudio.
                   </small>
                 </div>
 
                 {aboutRecord && aboutRecord.image && (
                   <div className="col-12 col-md-6">
-                    <label className="form-label small fw-semibold d-block">Imagen Actual</label>
+                    <label className="form-label small fw-semibold d-block">Imagen de Fondo Actual</label>
                     <div
                       className="rounded-3 p-2 border d-inline-block"
                       style={{ background: '#f8f9fa', maxWidth: '240px' }}
                     >
                       <img
                         src={resolveMediaUrl(aboutRecord.image)}
-                        alt="Boceto actual"
+                        alt="Fondo institucional actual"
                         className="img-fluid rounded"
-                        style={{ maxHeight: '160px', objectFit: 'contain' }}
+                        style={{ maxHeight: '160px', objectFit: 'cover' }}
                       />
                     </div>
                   </div>
