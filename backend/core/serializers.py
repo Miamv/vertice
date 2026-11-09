@@ -99,6 +99,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             'category',
             'location',
             'google_earth_url',
+            'order',
             'media',
             'cover_image',
             'created_at',
@@ -136,6 +137,8 @@ class ProjectSerializer(serializers.ModelSerializer):
 class ContactSerializer(serializers.ModelSerializer):
     profile_name = serializers.ReadOnlyField(source='profile.name')
     profile_slug = serializers.ReadOnlyField(source='profile.slug')
+    project_title = serializers.ReadOnlyField(source='project.title')
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
         model = Contact
@@ -144,9 +147,13 @@ class ContactSerializer(serializers.ModelSerializer):
             'profile',
             'profile_name',
             'profile_slug',
+            'project',
+            'project_title',
             'name',
             'email',
             'message',
+            'status',
+            'status_display',
             'created_at',
             'updated_at',
         )
@@ -155,6 +162,37 @@ class ContactSerializer(serializers.ModelSerializer):
         if value and not value.is_active:
             raise serializers.ValidationError('El estudio destinatario no se encuentra disponible.')
         return value
+
+    def validate(self, attrs):
+        profile = attrs.get('profile', getattr(self.instance, 'profile', None))
+        project = attrs.get('project', getattr(self.instance, 'project', None))
+
+        if project is not None and profile is not None and project.profile_id != profile.id:
+            raise serializers.ValidationError({
+                'project': 'El proyecto seleccionado no pertenece al estudio de la consulta.'
+            })
+
+        # En creación pública, toda consulta inicia en estado 'pending' (Pendiente)
+        if self.instance is None:
+            request = self.context.get('request')
+            user = getattr(request, 'user', None)
+            can_set_initial_status = bool(
+                user
+                and user.is_authenticated
+                and (
+                    user.is_superuser
+                    or getattr(user, 'role', None) == 'ADMIN'
+                    or (
+                        getattr(user, 'role', None) == 'OWNER'
+                        and profile is not None
+                        and profile.users.filter(id=user.id).exists()
+                    )
+                )
+            )
+            if not can_set_initial_status:
+                attrs['status'] = Contact.StatusChoices.PENDING
+
+        return attrs
 
 
 class StudioAboutSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):

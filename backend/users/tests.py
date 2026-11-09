@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import Media, ProfessionalProfile, Project, StudioAbout, TeamMember
+from core.models import Contact, Media, ProfessionalProfile, Project, StudioAbout, TeamMember
 
 User = get_user_model()
 
@@ -360,12 +360,21 @@ class RolePermissionTestCase(APITestCase):
         # 2. OWNER puede actualizar datos de su propio estudio pero no cambiar slug ni is_active
         update_own_res = self.client.patch(
             f'/api/profiles/{self.profile.slug}/',
-            {'phone': '+5492615550000', 'specialty': 'Arquitectura Sustentable'},
+            {
+                'contact_email': 'contacto@vertice.com',
+                'phone': '+54 9 261 555-1234',
+                'location': 'Mendoza, Argentina',
+                'instagram': '@vertice.estudio',
+                'specialty': 'Arquitectura Sustentable',
+            },
             format='json',
             **self._auth(self.owner_one),
         )
         self.assertEqual(update_own_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(update_own_res.data['phone'], '+5492615550000')
+        self.assertEqual(update_own_res.data['contact_email'], 'contacto@vertice.com')
+        self.assertEqual(update_own_res.data['phone'], '+54 9 261 555-1234')
+        self.assertEqual(update_own_res.data['location'], 'Mendoza, Argentina')
+        self.assertEqual(update_own_res.data['instagram'], '@vertice.estudio')
 
         change_slug_res = self.client.patch(
             f'/api/profiles/{self.profile.slug}/',
@@ -656,6 +665,135 @@ class RolePermissionTestCase(APITestCase):
         )
         self.assertEqual(admin_res.status_code, status.HTTP_200_OK)
         self.assertEqual(admin_res.data['location'], 'Bariloche, Río Negro')
+
+    def test_contact_management_status_project_association_and_filters(self):
+        # 1. Creación pública ignora estado forzado y arranca siempre en 'pending'
+        create_res = self.client.post(
+            '/api/contacts/',
+            {
+                'profile': self.profile.id,
+                'project': self.project_one.id,
+                'name': 'Interesado Uno',
+                'email': 'interesado1@test.com',
+                'message': 'Consulta sobre Proyecto Uno',
+                'status': 'closed',
+            },
+            format='json',
+        )
+        self.assertEqual(create_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_res.data['status'], Contact.StatusChoices.PENDING)
+        self.assertEqual(create_res.data['status_display'], 'Pendiente')
+        self.assertEqual(create_res.data['project'], self.project_one.id)
+        self.assertEqual(create_res.data['project_title'], self.project_one.title)
+        contact_id = create_res.data['id']
+
+        # 2. Creación pública rechaza asociar un proyecto de otro estudio (400 Bad Request)
+        cross_project_create = self.client.post(
+            '/api/contacts/',
+            {
+                'profile': self.profile.id,
+                'project': self.project_two.id,
+                'name': 'Interesado Cruzado',
+                'email': 'cruzado@test.com',
+                'message': 'Intento asociar proyecto ajeno',
+            },
+            format='json',
+        )
+        self.assertEqual(cross_project_create.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', cross_project_create.data)
+
+        # 3. COLLABORATOR puede listar y ver detalle, pero NO puede actualizar estado ni proyecto (403)
+        collab_list = self.client.get('/api/contacts/', **self._auth(self.collab_one))
+        self.assertEqual(collab_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(collab_list.data), 1)
+
+        collab_patch = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.IN_REVIEW},
+            format='json',
+            **self._auth(self.collab_one),
+        )
+        self.assertEqual(collab_patch.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. OWNER puede cambiar el estado ('in_review', 'responded', 'closed') y asociar/desasociar proyecto propio
+        owner_patch_review = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.IN_REVIEW, 'project': None},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_patch_review.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_patch_review.data['status'], Contact.StatusChoices.IN_REVIEW)
+        self.assertEqual(owner_patch_review.data['status_display'], 'En revisión')
+        self.assertIsNone(owner_patch_review.data['project'])
+
+        owner_patch_responded = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.RESPONDED, 'project': self.project_one.id},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_patch_responded.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_patch_responded.data['status'], Contact.StatusChoices.RESPONDED)
+        self.assertEqual(owner_patch_responded.data['project'], self.project_one.id)
+
+        # 5. OWNER NO puede asociar un proyecto de otro estudio a su consulta (400 Bad Request)
+        owner_foreign_proj = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'project': self.project_two.id},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_foreign_proj.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', owner_foreign_proj.data)
+
+        # 6. Filtros por estado, proyecto y rango de fechas
+        second_contact = Contact.objects.create(
+            profile=self.profile,
+            name='Interesado Dos',
+            email='interesado2@test.com',
+            message='Segunda consulta sin proyecto',
+            status=Contact.StatusChoices.CLOSED,
+        )
+
+        by_status_responded = self.client.get(
+            f'/api/contacts/?status={Contact.StatusChoices.RESPONDED}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_status_responded.data], [contact_id])
+
+        by_status_closed = self.client.get(
+            f'/api/contacts/?status={Contact.StatusChoices.CLOSED}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_status_closed.data], [second_contact.id])
+
+        by_project_one = self.client.get(
+            f'/api/contacts/?project={self.project_one.id}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_project_one.data], [contact_id])
+
+        by_project_none = self.client.get(
+            '/api/contacts/?project=none',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_project_none.data], [second_contact.id])
+
+        today_str = second_contact.created_at.strftime('%Y-%m-%d')
+        by_date = self.client.get(
+            f'/api/contacts/?date_from={today_str}&date_to={today_str}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(len(by_date.data), 2)
+
+        future_date = '2099-01-01'
+        by_future_date = self.client.get(
+            f'/api/contacts/?date_from={future_date}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(len(by_future_date.data), 0)
+
 
 
 

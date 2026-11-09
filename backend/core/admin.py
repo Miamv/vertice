@@ -81,7 +81,7 @@ class StudioScopedAdminMixin:
 
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'specialty', 'contact_email', 'phone', 'is_active', 'created_at')
+    list_display = ('name', 'slug', 'specialty', 'contact_email', 'phone', 'location', 'instagram', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at')
     search_fields = ('name', 'slug', 'users__username', 'users__email')
     prepopulated_fields = {'slug': ('name',)}
@@ -124,13 +124,15 @@ class MediaInline(admin.TabularInline):
 
 @admin.register(Project)
 class ProjectAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
-    list_display = ('title', 'profile', 'category', 'location', 'google_earth_url', 'created_at')
+    list_display = ('title', 'profile', 'category', 'order', 'location', 'google_earth_url', 'created_at')
+    list_editable = ('order',)
     list_filter = ('profile', 'category', 'created_at')
     search_fields = ('title', 'location')
     fields = (
         'profile',
         'title',
         'category',
+        'order',
         'description',
         'location',
         'google_earth_url',
@@ -143,7 +145,7 @@ class ProjectAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
             request.user.is_authenticated and getattr(request.user, 'role', None) == User.RoleChoices.OWNER
         )
         if not is_owner_or_admin:
-            for field_name in ('location', 'google_earth_url'):
+            for field_name in ('order', 'location', 'google_earth_url'):
                 if field_name not in readonly:
                     readonly.append(field_name)
         return tuple(readonly)
@@ -168,9 +170,10 @@ class MediaAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
 
 @admin.register(Contact)
 class ContactAdmin(StudioScopedAdminMixin, admin.ModelAdmin):
-    list_display = ('name', 'profile', 'created_at')
-    list_filter = ('profile', 'created_at')
-    search_fields = ('name', 'email')
+    list_display = ('name', 'email', 'profile', 'project', 'status', 'created_at')
+    list_editable = ('status', 'project')
+    list_filter = ('status', 'profile', 'created_at')
+    search_fields = ('name', 'email', 'message', 'project__title')
 
 
 @admin.register(StudioAbout)

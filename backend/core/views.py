@@ -129,7 +129,7 @@ class ProfessionalProfileViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.select_related('profile').prefetch_related('media').order_by('-created_at')
+    queryset = Project.objects.select_related('profile').prefetch_related('media').order_by('order', '-created_at')
     serializer_class = ProjectSerializer
 
     def get_queryset(self):
@@ -213,8 +213,38 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
 
 
 class ContactViewSet(viewsets.ModelViewSet):
-    queryset = Contact.objects.select_related('profile').order_by('-created_at')
+    queryset = Contact.objects.select_related('profile', 'project').order_by('-created_at')
     serializer_class = ContactSerializer
+
+    def _apply_contact_filters(self, qs):
+        qs = _filter_by_profile_params(qs, self.request, prefix='profile')
+
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+
+        project_param = self.request.query_params.get('project')
+        if project_param is not None and project_param != '':
+            if str(project_param).lower() in ('none', 'null', '0'):
+                qs = qs.filter(project__isnull=True)
+            elif str(project_param).isdigit():
+                qs = qs.filter(project_id=int(project_param))
+            else:
+                return qs.none()
+
+        date_param = self.request.query_params.get('date')
+        if date_param:
+            qs = qs.filter(created_at__date=date_param)
+
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            qs = qs.filter(created_at__date__gte=date_from)
+
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            qs = qs.filter(created_at__date__lte=date_to)
+
+        return qs
 
     def get_queryset(self):
         user = self.request.user
@@ -223,11 +253,11 @@ class ContactViewSet(viewsets.ModelViewSet):
 
         qs = super().get_queryset()
         if _is_platform_admin(user):
-            return _filter_by_profile_params(qs, self.request, prefix='profile')
+            return self._apply_contact_filters(qs)
 
         if user.role in (user.RoleChoices.OWNER, user.RoleChoices.COLLABORATOR):
             qs = qs.filter(profile__users=user)
-            return _filter_by_profile_params(qs, self.request, prefix='profile')
+            return self._apply_contact_filters(qs)
 
         return Contact.objects.none()
 

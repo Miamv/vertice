@@ -193,7 +193,11 @@ class CanManageContact(permissions.BasePermission):
             return obj.profile.users.filter(id=request.user.id).exists()
 
         if request.user.role == User.RoleChoices.OWNER:
-            return obj.profile.users.filter(id=request.user.id).exists()
+            if not obj.profile.users.filter(id=request.user.id).exists():
+                return False
+            if view.action in ['update', 'partial_update'] and 'profile' in request.data:
+                return _user_owns_profile(request.user, request.data.get('profile'))
+            return True
 
         return False
 

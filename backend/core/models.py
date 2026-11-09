@@ -38,6 +38,8 @@ class ProfessionalProfile(models.Model):
     services = models.TextField(blank=True)
     contact_email = models.EmailField(blank=True)
     phone = models.CharField(max_length=30, blank=True)
+    location = models.CharField(max_length=200, blank=True)
+    instagram = models.CharField(max_length=150, blank=True)
     avatar = models.ImageField(upload_to='profiles/', blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -87,6 +89,7 @@ class Project(models.Model):
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     location = models.CharField(max_length=200, blank=True)
     google_earth_url = models.URLField(max_length=500, blank=True)
+    order = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,7 +97,7 @@ class Project(models.Model):
         return self.title
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['order', '-created_at']
 
 
 class Media(models.Model):
@@ -184,20 +187,46 @@ class Media(models.Model):
 
 
 class Contact(models.Model):
+    class StatusChoices(models.TextChoices):
+        PENDING = 'pending', 'Pendiente'
+        IN_REVIEW = 'in_review', 'En revisión'
+        RESPONDED = 'responded', 'Respondida'
+        CLOSED = 'closed', 'Cerrada'
+
     profile = models.ForeignKey(
         ProfessionalProfile,
         on_delete=models.CASCADE,
         related_name='contacts'
     )
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='contacts',
+    )
 
     name = models.CharField(max_length=100)
     email = models.EmailField()
     message = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        super().clean()
+        if self.project_id and self.profile_id:
+            if self.project.profile_id != self.profile_id:
+                raise ValidationError({
+                    'project': 'El proyecto asociado debe pertenecer al mismo estudio de la consulta.'
+                })
+
     def __str__(self):
-        return f'Message to {self.profile} from {self.name}'
+        return f'Message to {self.profile} from {self.name} ({self.get_status_display()})'
 
     class Meta:
         ordering = ['-created_at']
