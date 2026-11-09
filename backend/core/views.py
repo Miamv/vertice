@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -232,17 +232,21 @@ class ContactViewSet(viewsets.ModelViewSet):
             else:
                 return qs.none()
 
-        date_param = self.request.query_params.get('date')
-        if date_param:
-            qs = qs.filter(created_at__date=date_param)
-
-        date_from = self.request.query_params.get('date_from')
-        if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
-
-        date_to = self.request.query_params.get('date_to')
-        if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
+        date_filters = (
+            ('date', 'created_at__date'),
+            ('date_from', 'created_at__date__gte'),
+            ('date_to', 'created_at__date__lte'),
+        )
+        date_field = serializers.DateField()
+        for parameter, lookup in date_filters:
+            raw_date = self.request.query_params.get(parameter)
+            if not raw_date:
+                continue
+            try:
+                parsed_date = date_field.run_validation(raw_date)
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({parameter: exc.detail}) from exc
+            qs = qs.filter(**{lookup: parsed_date})
 
         return qs
 

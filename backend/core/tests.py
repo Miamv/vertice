@@ -33,37 +33,6 @@ VALID_GIF = (
 )
 
 
-def make_valid_pdf():
-    objects = (
-        b'<< /Type /Catalog /Pages 2 0 R >>',
-        b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] '
-        b'/Contents 4 0 R /Resources << >> >>',
-        b'<< /Length 0 >>\nstream\n\nendstream',
-    )
-    content = bytearray(b'%PDF-1.4\n')
-    offsets = [0]
-    for object_number, body in enumerate(objects, start=1):
-        offsets.append(len(content))
-        content.extend(f'{object_number} 0 obj\n'.encode())
-        content.extend(body + b'\nendobj\n')
-
-    xref_offset = len(content)
-    content.extend(f'xref\n0 {len(offsets)}\n'.encode())
-    content.extend(b'0000000000 65535 f \n')
-    for offset in offsets[1:]:
-        content.extend(f'{offset:010d} 00000 n \n'.encode())
-    trailer = (
-        f'trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\n'
-        f'startxref\n{xref_offset}\n%%EOF'
-    )
-    content.extend(trailer.encode())
-    return bytes(content)
-
-
-VALID_PDF = make_valid_pdf()
-
-
 class UserAdminFormsTestCase(TestCase):
     def test_custom_user_creation_form_requires_email(self):
         form = CustomUserCreationForm(data={
@@ -253,11 +222,10 @@ class MediaAndProjectSerializerTestCase(TestCase):
         self.assertTrue(bool(media_obj.file))
         self.assertIn('http://testserver', serializer.data['file'])
 
-    def test_media_serializer_accepts_images_renders_and_pdf_plans(self):
+    def test_media_serializer_accepts_images_and_renders(self):
         valid_uploads = (
             ('image.gif', 'image/gif', 'image', None, VALID_GIF),
             ('render.gif', 'image/gif', 'render', None, VALID_GIF),
-            ('planta.pdf', 'application/pdf', 'image', 'planta', VALID_PDF),
         )
 
         for filename, content_type, media_type, plan_type, content in valid_uploads:
@@ -272,36 +240,29 @@ class MediaAndProjectSerializerTestCase(TestCase):
                 serializer = MediaSerializer(data=data)
                 self.assertTrue(serializer.is_valid(), serializer.errors)
 
-    def test_pdf_without_a_plan_category_is_rejected_by_serializer_and_model(self):
-        valid_model_media = Media(
-            project=self.project,
-            file=SimpleUploadedFile('planta.pdf', VALID_PDF, content_type='application/pdf'),
-            media_type='image',
-            plan_type='planta',
-        )
-        valid_model_media.full_clean()
-
-        upload = SimpleUploadedFile('anexo.pdf', VALID_PDF, content_type='application/pdf')
+    def test_pdf_uploads_are_rejected_by_serializer_and_model(self):
+        upload = SimpleUploadedFile('planta.pdf', b'%PDF-1.4', content_type='application/pdf')
         serializer = MediaSerializer(data={
             'project': self.project.id,
             'file': upload,
             'media_type': 'image',
         })
         self.assertFalse(serializer.is_valid())
-        self.assertIn('plan_type', serializer.errors)
+        self.assertIn('file', serializer.errors)
 
         media = Media(
             project=self.project,
-            file=SimpleUploadedFile('anexo.pdf', VALID_PDF, content_type='application/pdf'),
+            file=SimpleUploadedFile('planta.pdf', b'%PDF-1.4', content_type='application/pdf'),
             media_type='image',
+            plan_type='planta',
         )
         with self.assertRaises(ValidationError) as raised:
             media.full_clean()
-        self.assertIn('plan_type', raised.exception.message_dict)
+        self.assertIn('file', raised.exception.message_dict)
 
         wrong_media_category = MediaSerializer(data={
             'project': self.project.id,
-            'file': SimpleUploadedFile('planta.pdf', VALID_PDF, content_type='application/pdf'),
+            'file': SimpleUploadedFile('planta.pdf', b'%PDF-1.4', content_type='application/pdf'),
             'media_type': 'video',
             'plan_type': 'planta',
         })
@@ -317,18 +278,17 @@ class MediaAndProjectSerializerTestCase(TestCase):
         self.assertFalse(mismatched_image.is_valid())
         self.assertIn('file', mismatched_image.errors)
 
-        oversized_pdf = MediaSerializer(data={
+        oversized_image = MediaSerializer(data={
             'project': self.project.id,
             'file': SimpleUploadedFile(
-                'oversized.pdf',
-                VALID_PDF + (b'x' * (10 * 1024 * 1024)),
-                content_type='application/pdf',
+                'oversized.gif',
+                VALID_GIF + (b'x' * (10 * 1024 * 1024)),
+                content_type='image/gif',
             ),
-            'media_type': 'image',
-            'plan_type': 'planta',
+            'media_type': 'render',
         })
-        self.assertFalse(oversized_pdf.is_valid())
-        self.assertIn('file', oversized_pdf.errors)
+        self.assertFalse(oversized_image.is_valid())
+        self.assertIn('file', oversized_image.errors)
 
     def test_media_validation_rejects_incoherent_types_and_invalid_extensions(self):
         # 1. Rechazar plan_type en un archivo de tipo 'video'

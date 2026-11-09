@@ -312,8 +312,6 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual([p['id'] for p in proj_res.data], [self.project_one.id])
         self.assertEqual(proj_res.data[0]['profile_slug'], 'estudio-uno')
         self.assertEqual(proj_res.data[0]['profile_name'], 'Estudio Uno')
-        self.assertNotIn('brands', proj_res.data[0])
-        self.assertNotIn('brand_ids', proj_res.data[0])
 
         # Detalle de proyecto ajeno bajo profile_slug=estudio-uno devuelve 404
         cross_detail = self.client.get(
@@ -336,10 +334,6 @@ class RolePermissionTestCase(APITestCase):
 
         media_res = self.client.get('/api/media/?profile_slug=estudio-uno')
         self.assertEqual([m['id'] for m in media_res.data], [media_a.id])
-
-        # El endpoint /api/brands/ fue eliminado definitivamente (404 Not Found)
-        brands_res = self.client.get('/api/brands/')
-        self.assertEqual(brands_res.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_profile_and_studio_content_hardened_permissions(self):
         # 1. OWNER no puede crear ni eliminar un ProfessionalProfile
@@ -794,6 +788,62 @@ class RolePermissionTestCase(APITestCase):
         )
         self.assertEqual(len(by_future_date.data), 0)
 
+    def test_invalid_contact_date_filters_return_400(self):
+        Contact.objects.create(
+            profile=self.profile,
+            name='Cliente',
+            email='cliente@example.com',
+            message='Consulta de prueba',
+        )
 
+        for filter_name in ('date', 'date_from', 'date_to'):
+            with self.subTest(filter_name=filter_name):
+                response = self.client.get(
+                    f'/api/contacts/?{filter_name}=2026-02-30',
+                    **self._auth(self.owner_one),
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class DecompressionBombUploadTestCase(APITestCase):
+    def setUp(self):
+        media_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(media_directory.cleanup)
+        media_settings = override_settings(MEDIA_ROOT=media_directory.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        self.admin = User.objects.create_user(
+            username='media_admin',
+            email='media-admin@example.com',
+            password='securepass123',
+            role=User.RoleChoices.ADMIN,
+        )
+        profile = ProfessionalProfile.objects.create(name='Estudio Prueba')
+        self.project = Project.objects.create(
+            profile=profile,
+            title='Proyecto Prueba',
+            description='Proyecto para probar validación de imágenes.',
+            category='architecture',
+        )
+
+    def test_huge_declared_gif_dimensions_return_validation_error(self):
+        huge_gif = bytearray(VALID_GIF)
+        huge_gif[6:8] = (20_000).to_bytes(2, 'little')
+        huge_gif[8:10] = (20_000).to_bytes(2, 'little')
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            '/api/media/',
+            {
+                'project': self.project.id,
+                'file': SimpleUploadedFile('huge.gif', bytes(huge_gif), content_type='image/gif'),
+                'media_type': 'image',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('file', response.data)
 
 

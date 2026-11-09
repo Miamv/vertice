@@ -35,16 +35,6 @@ def _validate_uploaded_media_content(file_obj, extension):
         return
 
     content_type = getattr(upload, 'content_type', None)
-    if extension == 'pdf':
-        if content_type and content_type != 'application/pdf':
-            raise ValidationError({'file': 'El contenido del archivo no coincide con el PDF declarado.'})
-        upload.seek(0)
-        header = upload.read(1024)
-        upload.seek(0)
-        if b'%PDF-' not in header:
-            raise ValidationError({'file': 'El archivo no contiene una cabecera PDF válida.'})
-        return
-
     expected_content_types = {
         'jpg': 'image/jpeg',
         'jpeg': 'image/jpeg',
@@ -81,7 +71,13 @@ def _validate_uploaded_media_content(file_obj, extension):
                 if image.format != expected_format:
                     raise ValueError('El contenido no coincide con la extensión.')
                 image.verify()
-    except (UnidentifiedImageError, OSError, ValueError, ElementTree.ParseError) as exc:
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        OSError,
+        ValueError,
+        ElementTree.ParseError,
+    ) as exc:
         raise ValidationError({'file': 'El contenido no es una imagen válida para su extensión.'}) from exc
 
 
@@ -180,10 +176,13 @@ class Project(models.Model):
 
 
 class Media(models.Model):
-    IMAGE_AND_PLAN_EXTENSIONS = ('jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'svg', 'bmp', 'pdf')
+    IMAGE_EXTENSIONS = ('jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'svg', 'bmp')
+    PDF_EXTENSION = 'pdf'
     VIDEO_EXTENSIONS = ('mp4', 'webm', 'mov', 'ogg')
     MODEL_3D_EXTENSIONS = ('obj', 'fbx', 'gltf', 'glb', 'stl')
-    ALLOWED_MEDIA_EXTENSIONS = IMAGE_AND_PLAN_EXTENSIONS + VIDEO_EXTENSIONS + MODEL_3D_EXTENSIONS
+    ALLOWED_MEDIA_EXTENSIONS = (
+        IMAGE_EXTENSIONS + (PDF_EXTENSION,) + VIDEO_EXTENSIONS + MODEL_3D_EXTENSIONS
+    )
 
     MEDIA_TYPES = [
         ('image', 'Image'),
@@ -224,7 +223,7 @@ class Media(models.Model):
     def validate_media_coherence(cls, media_type, plan_type, file_obj=None):
         errors = {}
         if media_type not in ('image', 'render'):
-            errors['media_type'] = 'Solo se admiten imágenes, renders y planos PDF.'
+            errors['media_type'] = 'Solo se admiten imágenes y renders.'
         if plan_type and media_type not in ('image', 'render'):
             errors['plan_type'] = (
                 'Solo los archivos de tipo imagen o render pueden clasificarse como plano técnico.'
@@ -236,13 +235,13 @@ class Media(models.Model):
             if ext:
                 if ext not in cls.ALLOWED_MEDIA_EXTENSIONS:
                     errors['file'] = f'La extensión ".{ext}" no está permitida.'
-                elif ext == 'pdf' and not plan_type:
-                    errors['plan_type'] = 'Los archivos PDF deben clasificarse como un plano técnico.'
-                elif plan_type and ext not in cls.IMAGE_AND_PLAN_EXTENSIONS:
+                elif ext == cls.PDF_EXTENSION:
+                    errors['file'] = 'Por el momento solo se admiten archivos de imagen.'
+                elif plan_type and ext not in cls.IMAGE_EXTENSIONS:
                     errors['file'] = (
-                        'Los renders, imágenes y planos deben tener una extensión de imagen o PDF válida.'
+                        'Los planos técnicos deben tener una extensión de imagen válida.'
                     )
-                elif media_type in ('image', 'render') and ext not in cls.IMAGE_AND_PLAN_EXTENSIONS:
+                elif media_type in ('image', 'render') and ext not in cls.IMAGE_EXTENSIONS:
                     errors['file'] = 'Las imágenes y renders deben usar una extensión de imagen válida.'
                 elif media_type not in ('image', 'render'):
                     if media_type == 'video':

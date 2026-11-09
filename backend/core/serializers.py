@@ -96,11 +96,6 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict)
 
-        if media_type not in ('image', 'render'):
-            raise serializers.ValidationError({
-                'media_type': 'Por ahora solo se admiten imágenes y renders.'
-            })
-
         return attrs
 
 

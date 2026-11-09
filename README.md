@@ -48,7 +48,7 @@ Los objetivos que orientan el proyecto son:
 ## Qué ofrece hoy
 
 - Perfiles públicos de estudios con información de contacto, servicios y ubicación.
-- Proyectos asociados a un estudio, con galería de imágenes/renders y planos técnicos en imagen o PDF.
+- Proyectos asociados a un estudio, con galería de imágenes/renders y planos técnicos en formato de imagen.
 - Sección institucional y miembros del equipo.
 - Consultas de visitantes relacionadas con un estudio y, opcionalmente, un proyecto.
 - Registro, inicio de sesión con JWT y cierre de sesión con invalidación del token de refresco.
@@ -199,7 +199,7 @@ Configura `frontend/` como directorio raíz, `npm run build` como comando de con
 
 ### Cloudinary — archivos
 
-Las nuevas cargas se guardan bajo el prefijo `vertice/`. El código contempla imágenes/renders y planos PDF, con un límite de **10 MiB por archivo**. En cuentas de Cloudinary que bloquean la entrega de PDF por defecto, ese formato debe habilitarse en la configuración de seguridad.
+Las nuevas cargas se guardan bajo el prefijo `vertice/`. El flujo actual admite imágenes y renders, incluidos los planos técnicos en formato de imagen, con un límite de **10 MiB por archivo**.
 
 Durante el desarrollo local, los medios se guardan en el servidor. Al cambiar a Cloudinary, los archivos locales no se transfieren automáticamente.
 

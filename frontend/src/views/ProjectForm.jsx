@@ -39,10 +39,9 @@ const MEDIA_MIME_TYPES = {
   gif: 'image/gif',
   svg: 'image/svg+xml',
   bmp: 'image/bmp',
-  pdf: 'application/pdf',
 };
 
-function validateMediaFile(file, planType) {
+function validateMediaFile(file) {
   if (file.size > MAX_MEDIA_SIZE) {
     return 'El archivo no puede superar los 10 MiB.';
   }
@@ -50,13 +49,10 @@ function validateMediaFile(file, planType) {
   const extension = file.name.split('.').pop()?.toLowerCase();
   const expectedMimeType = MEDIA_MIME_TYPES[extension];
   if (!expectedMimeType) {
-    return 'Formato no permitido. Subí una imagen compatible o un PDF clasificado como plano.';
+    return 'Formato no permitido. Subí una imagen compatible.';
   }
   if (file.type && file.type !== expectedMimeType) {
     return 'El tipo de archivo no coincide con su extensión.';
-  }
-  if (extension === 'pdf' && !planType) {
-    return 'Los archivos PDF deben clasificarse como un plano técnico.';
   }
 
   return null;
@@ -254,7 +250,7 @@ export default function ProjectForm() {
       return;
     }
 
-    const fileError = validateMediaFile(draftMedia.file, draftMedia.plan_type);
+    const fileError = validateMediaFile(draftMedia.file);
     if (fileError) {
       setMediaFeedback({ type: 'warning', message: fileError });
       return;
@@ -396,11 +392,11 @@ export default function ProjectForm() {
       });
     }
 
-    const invalidUpload = queue.find((item) => validateMediaFile(item.file, item.plan_type));
+    const invalidUpload = queue.find((item) => validateMediaFile(item.file));
     if (invalidUpload) {
       setMediaFeedback({
         type: 'danger',
-        message: validateMediaFile(invalidUpload.file, invalidUpload.plan_type),
+        message: validateMediaFile(invalidUpload.file),
       });
       return;
     }
@@ -778,7 +774,7 @@ export default function ProjectForm() {
                       ref={fileInputRef}
                       id="mediaFileInput"
                       type="file"
-                      accept=".jpg,.jpeg,.png,.webp,.avif,.gif,.svg,.bmp,.pdf,application/pdf,image/jpeg,image/png,image/webp,image/avif,image/gif,image/svg+xml,image/bmp"
+                      accept=".jpg,.jpeg,.png,.webp,.avif,.gif,.svg,.bmp,image/jpeg,image/png,image/webp,image/avif,image/gif,image/svg+xml,image/bmp"
                       className="form-control form-control-sm rounded-3"
                       onChange={handleDraftFileChange}
                       disabled={submitting}
@@ -854,9 +850,6 @@ export default function ProjectForm() {
                         style={{ width: '44px', height: '34px', objectFit: 'cover' }}
                       />
                     )}
-                    {draftMedia.file?.name.toLowerCase().endsWith('.pdf') && (
-                      <span className="badge bg-light text-dark border">PDF</span>
-                    )}
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-dark rounded-pill px-3 fw-semibold"
@@ -895,7 +888,7 @@ export default function ProjectForm() {
                               className="rounded-2 d-flex align-items-center justify-content-center bg-light text-muted small"
                               style={{ width: '54px', height: '40px', fontSize: '0.68rem' }}
                             >
-                              {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Archivo'}
+                              Archivo
                             </div>
                           )}
                           <div className="text-truncate" style={{ maxWidth: '180px' }}>
@@ -905,9 +898,6 @@ export default function ProjectForm() {
                             <span className="badge bg-warning-subtle text-dark border" style={{ fontSize: '0.65rem' }}>
                               Pendiente de guardar
                             </span>
-                            {item.file.name.toLowerCase().endsWith('.pdf') && item.previewUrl && (
-                              <a className="d-block small" href={item.previewUrl} target="_blank" rel="noreferrer">Abrir PDF</a>
-                            )}
                           </div>
                         </div>
 
@@ -986,7 +976,7 @@ export default function ProjectForm() {
                           className="d-flex align-items-center justify-content-between gap-2 p-2 rounded-3 border bg-white flex-wrap"
                         >
                           <div className="d-flex align-items-center gap-2" style={{ minWidth: '180px' }}>
-                            {fileUrl && !/\.pdf(?:$|[?#])/i.test(fileUrl) ? (
+                            {fileUrl ? (
                               <img
                                 src={fileUrl}
                                 alt={fileName}
@@ -1000,7 +990,7 @@ export default function ProjectForm() {
                                 className="rounded-2 d-flex align-items-center justify-content-center bg-light text-muted small"
                                 style={{ width: '54px', height: '40px', fontSize: '0.68rem' }}
                               >
-                                {/\.pdf(?:$|[?#])/i.test(fileUrl || '') ? 'PDF' : 'Sin vista'}
+                                Sin vista
                               </div>
                             )}
                             <div className="text-truncate" style={{ maxWidth: '180px' }}>
@@ -1010,9 +1000,6 @@ export default function ProjectForm() {
                               <span className="text-muted" style={{ fontSize: '0.7rem' }}>
                                 ID #{item.id} {normalizedPlan ? `· Plano: ${PLAN_LABELS[normalizedPlan] || normalizedPlan}` : '· Galería / Render'}
                               </span>
-                              {/\.pdf(?:$|[?#])/i.test(fileUrl || '') && (
-                                <a className="d-block small" href={fileUrl} target="_blank" rel="noreferrer">Abrir PDF</a>
-                              )}
                             </div>
                           </div>
 
