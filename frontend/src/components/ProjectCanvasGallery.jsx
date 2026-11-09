@@ -15,6 +15,7 @@ export default function ProjectCanvasGallery({ images, title, hint, onSwipeUp })
 
   const count = images.length;
   const active = images[index] ?? images[0];
+  const activeIsPdf = /\.pdf(?:$|[?#])/i.test(active || '');
 
   useEffect(() => {
     function onFsChange() {
@@ -113,7 +114,11 @@ export default function ProjectCanvasGallery({ images, title, hint, onSwipeUp })
       >
         {images.map((src, i) => (
           <div className="pv-canvasgal__slide" key={`${i}-${src.slice(-24)}`} aria-hidden={i !== index}>
-            <img src={src} alt={i === index ? title : ''} draggable={false} />
+            {/\.pdf(?:$|[?#])/i.test(src) ? (
+              <iframe src={src} title={`${title} — documento ${i + 1}`} loading="lazy" />
+            ) : (
+              <img src={src} alt={i === index ? title : ''} draggable={false} />
+            )}
           </div>
         ))}
       </div>
@@ -141,7 +146,7 @@ export default function ProjectCanvasGallery({ images, title, hint, onSwipeUp })
         </div>
       )}
 
-      <button
+      {!activeIsPdf && <button
         type="button"
         className="pv-circle-btn pv-canvas__fs"
         onClick={toggleFullscreen}
@@ -156,7 +161,7 @@ export default function ProjectCanvasGallery({ images, title, hint, onSwipeUp })
             <path d="M4 9 V4 H9 M15 4 H20 V9 M20 15 V20 H15 M9 20 H4 V15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-      </button>
+      </button>}
 
       <ImageFullscreen src={fallbackFs ? active : null} onClose={() => setFallbackFs(false)} />
     </div>

@@ -1,7 +1,23 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import (
+    MAX_UPLOAD_SIZE,
+    ProfessionalProfile,
+    Project,
+    Media,
+    Contact,
+    StudioAbout,
+    TeamMember,
+)
+
+
+def validate_upload_sizes(attrs):
+    for field_name, value in attrs.items():
+        if getattr(value, 'size', 0) > MAX_UPLOAD_SIZE:
+            raise serializers.ValidationError({
+                field_name: 'El archivo no puede superar los 10 MiB.'
+            })
 
 
 class AbsoluteMediaUrlMixin:
@@ -37,6 +53,7 @@ class ProfessionalProfileSerializer(AbsoluteMediaUrlMixin, serializers.ModelSeri
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate(self, attrs):
+        validate_upload_sizes(attrs)
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         is_admin = bool(
@@ -65,6 +82,7 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
         fields = ('id', 'project', 'file', 'media_type', 'zone', 'plan_type')
 
     def validate(self, attrs):
+        validate_upload_sizes(attrs)
         instance = self.instance
         media_type = attrs.get('media_type', getattr(instance, 'media_type', None))
         plan_type = attrs.get('plan_type', getattr(instance, 'plan_type', None))
@@ -77,6 +95,11 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
             Media.validate_media_coherence(media_type, plan_type, file_obj)
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict)
+
+        if media_type not in ('image', 'render'):
+            raise serializers.ValidationError({
+                'media_type': 'Por ahora solo se admiten imágenes y renders.'
+            })
 
         return attrs
 
@@ -130,7 +153,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(first_media.file.url)
         return first_media.file.url
 
-    def get_cover_image(self, obj):
+    def get_cover_image(self, obj: Project) -> str | None:
         return self._get_cover_url(obj)
 
 
@@ -211,6 +234,10 @@ class StudioAboutSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
             'updated_at',
         )
 
+    def validate(self, attrs):
+        validate_upload_sizes(attrs)
+        return attrs
+
 
 class TeamMemberSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
     media_fields = ('avatar',)
@@ -228,3 +255,7 @@ class TeamMemberSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
             'order',
             'created_at',
         )
+
+    def validate(self, attrs):
+        validate_upload_sizes(attrs)
+        return attrs

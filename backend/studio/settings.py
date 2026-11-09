@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -27,9 +29,16 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.environ['DJANGO_SECRET_KEY']
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        'DJANGO_ALLOWED_HOSTS',
+        'localhost,127.0.0.1',
+    ).split(',')
+    if host.strip()
+]
 
 
 # Application definition
@@ -41,6 +50,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'cloudinary_storage',
+    'cloudinary',
     'rest_framework',
     'corsheaders',
     'drf_spectacular',
@@ -52,6 +63,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -83,16 +95,53 @@ WSGI_APPLICATION = 'studio.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+
+if DATABASE_URL:
+    try:
+        default_database = dj_database_url.parse(DATABASE_URL)
+    except ValueError as exc:
+        raise ImproperlyConfigured(
+            'DATABASE_URL no es una URL de base de datos válida.'
+        ) from exc
+else:
+    default_database = {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'programacion1_db'),
-        'USER': os.environ.get('DB_USER', ''),
-        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+        'NAME': (
+            os.environ.get('PGDATABASE')
+            or os.environ.get('DB_NAME')
+            or 'programacion1_db'
+        ),
+        'USER': os.environ.get('PGUSER') or os.environ.get('DB_USER', ''),
+        'PASSWORD': os.environ.get('PGPASSWORD') or os.environ.get('DB_PASSWORD', ''),
+        'HOST': os.environ.get('PGHOST') or os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('PGPORT') or os.environ.get('DB_PORT', '5432'),
     }
-}
+
+if default_database.get('ENGINE') != 'django.db.backends.postgresql':
+    raise ImproperlyConfigured(
+        'La aplicación requiere PostgreSQL. Revisá DATABASE_URL o las variables PG*/DB_*.'
+    )
+
+required_database_fields = ('NAME', 'USER', 'HOST')
+missing_database_fields = [
+    field for field in required_database_fields if not default_database.get(field)
+]
+if missing_database_fields:
+    field_sources = {
+        'NAME': 'DATABASE_URL, PGDATABASE o DB_NAME',
+        'USER': 'DATABASE_URL, PGUSER o DB_USER',
+        'HOST': 'DATABASE_URL, PGHOST o DB_HOST',
+    }
+    missing_sources = ', '.join(
+        field_sources[field] for field in missing_database_fields
+    )
+    raise ImproperlyConfigured(
+        'Configuración PostgreSQL incompleta. Definí los valores requeridos en '
+        f'{missing_sources}.'
+    )
+
+DATABASES = {'default': default_database}
 
 AUTH_USER_MODEL = 'core.User'
 
@@ -131,17 +180,60 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+if DEBUG:
+    DEFAULT_MEDIA_STORAGE = 'django.core.files.storage.FileSystemStorage'
+else:
+    DEFAULT_MEDIA_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+CLOUDINARY_STORAGE = {
+    # Mantiene separados los recursos de Vértice dentro de la cuenta.
+    'PREFIX': os.environ.get('CLOUDINARY_MEDIA_PREFIX', 'vertice').strip('/'),
+}
+
+STORAGES = {
+    'default': {
+        'BACKEND': DEFAULT_MEDIA_STORAGE,
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CORS_ALLOWED_ORIGINS =[
-    'http://localhost:3000',
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'DJANGO_CORS_ALLOWED_ORIGINS',
+        'http://localhost:3000,http://localhost:5173'
+    ).split(',')
+    if origin.strip()
+]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    origin_regex.strip()
+    for origin_regex in os.environ.get(
+        'DJANGO_CORS_ALLOWED_ORIGIN_REGEXES',
+        '',
+    ).split(',')
+    if origin_regex.strip()
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'DJANGO_CSRF_TRUSTED_ORIGINS',
+        'http://localhost:3000,http://localhost:5173'
+    ).split(',')
+    if origin.strip()
 ]
 
 REST_FRAMEWORK = {
@@ -161,6 +253,14 @@ from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=2),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'AUTH_HEADER_TYPES': ('Bearer', 'JWT',),
+    'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
 }
+
+# Seguridad detrás del proxy HTTPS de Railway
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = not DEBUG
+
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0'))

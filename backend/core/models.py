@@ -1,10 +1,88 @@
 import os
+from io import BytesIO
+from xml.etree import ElementTree
+
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from django.core.files.uploadedfile import UploadedFile
 from django.db import models
 from django.utils.text import slugify
+from PIL import Image, UnidentifiedImageError
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+
+
+def validate_upload_size(field_name, file_obj):
+    upload = file_obj if isinstance(file_obj, UploadedFile) else getattr(file_obj, '_file', None)
+    if isinstance(upload, UploadedFile) and upload.size > MAX_UPLOAD_SIZE:
+        raise ValidationError({
+            field_name: 'El archivo no puede superar los 10 MiB.'
+        })
+
+
+def _uploaded_file(file_obj):
+    if isinstance(file_obj, UploadedFile):
+        return file_obj
+    upload = getattr(file_obj, '_file', None)
+    return upload if isinstance(upload, UploadedFile) else None
+
+
+def _validate_uploaded_media_content(file_obj, extension):
+    upload = _uploaded_file(file_obj)
+    if upload is None:
+        return
+
+    content_type = getattr(upload, 'content_type', None)
+    if extension == 'pdf':
+        if content_type and content_type != 'application/pdf':
+            raise ValidationError({'file': 'El contenido del archivo no coincide con el PDF declarado.'})
+        upload.seek(0)
+        header = upload.read(1024)
+        upload.seek(0)
+        if b'%PDF-' not in header:
+            raise ValidationError({'file': 'El archivo no contiene una cabecera PDF válida.'})
+        return
+
+    expected_content_types = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'webp': 'image/webp',
+        'avif': 'image/avif',
+        'gif': 'image/gif',
+        'bmp': 'image/bmp',
+        'svg': 'image/svg+xml',
+    }
+    expected_content_type = expected_content_types.get(extension)
+    if content_type and content_type != expected_content_type:
+        raise ValidationError({'file': 'El tipo MIME no coincide con la extensión de imagen.'})
+
+    upload.seek(0)
+    content = upload.read()
+    upload.seek(0)
+    try:
+        if extension == 'svg':
+            root = ElementTree.fromstring(content)
+            if root.tag.rsplit('}', 1)[-1].lower() != 'svg':
+                raise ValueError('El documento no tiene una raíz SVG.')
+        else:
+            with Image.open(BytesIO(content)) as image:
+                expected_format = {
+                    'jpg': 'JPEG',
+                    'jpeg': 'JPEG',
+                    'png': 'PNG',
+                    'webp': 'WEBP',
+                    'avif': 'AVIF',
+                    'gif': 'GIF',
+                    'bmp': 'BMP',
+                }[extension]
+                if image.format != expected_format:
+                    raise ValueError('El contenido no coincide con la extensión.')
+                image.verify()
+    except (UnidentifiedImageError, OSError, ValueError, ElementTree.ParseError) as exc:
+        raise ValidationError({'file': 'El contenido no es una imagen válida para su extensión.'}) from exc
 
 
 class User(AbstractUser):
@@ -56,6 +134,7 @@ class ProfessionalProfile(models.Model):
 
     def clean(self):
         super().clean()
+        validate_upload_size('avatar', self.avatar)
         if not self.slug:
             self.slug = self._generate_unique_slug()
 
@@ -144,6 +223,8 @@ class Media(models.Model):
     @classmethod
     def validate_media_coherence(cls, media_type, plan_type, file_obj=None):
         errors = {}
+        if media_type not in ('image', 'render'):
+            errors['media_type'] = 'Solo se admiten imágenes, renders y planos PDF.'
         if plan_type and media_type not in ('image', 'render'):
             errors['plan_type'] = (
                 'Solo los archivos de tipo imagen o render pueden clasificarse como plano técnico.'
@@ -155,26 +236,34 @@ class Media(models.Model):
             if ext:
                 if ext not in cls.ALLOWED_MEDIA_EXTENSIONS:
                     errors['file'] = f'La extensión ".{ext}" no está permitida.'
-                elif (plan_type or media_type in ('image', 'render')) and ext not in cls.IMAGE_AND_PLAN_EXTENSIONS:
+                elif ext == 'pdf' and not plan_type:
+                    errors['plan_type'] = 'Los archivos PDF deben clasificarse como un plano técnico.'
+                elif plan_type and ext not in cls.IMAGE_AND_PLAN_EXTENSIONS:
                     errors['file'] = (
                         'Los renders, imágenes y planos deben tener una extensión de imagen o PDF válida.'
                     )
-                elif media_type == 'video' and ext not in cls.VIDEO_EXTENSIONS:
-                    errors['file'] = (
-                        'Los archivos de video deben tener una extensión de video válida (.mp4, .webm, .mov, .ogg).'
-                    )
-                elif media_type == 'model_3d' and ext not in cls.MODEL_3D_EXTENSIONS:
-                    errors['file'] = (
-                        'Los modelos 3D deben tener una extensión 3D válida (.obj, .fbx, .gltf, .glb, .stl).'
-                    )
+                elif media_type in ('image', 'render') and ext not in cls.IMAGE_AND_PLAN_EXTENSIONS:
+                    errors['file'] = 'Las imágenes y renders deben usar una extensión de imagen válida.'
+                elif media_type not in ('image', 'render'):
+                    if media_type == 'video':
+                        allowed_for_type = cls.VIDEO_EXTENSIONS
+                    elif media_type == 'model_3d':
+                        allowed_for_type = cls.MODEL_3D_EXTENSIONS
+                    else:
+                        allowed_for_type = ()
+                    if ext not in allowed_for_type:
+                        errors['file'] = 'El archivo no corresponde al tipo de medio seleccionado.'
 
         if errors:
             raise ValidationError(errors)
+        if file_obj and file_name and ext:
+            _validate_uploaded_media_content(file_obj, ext)
 
     def clean(self):
         super().clean()
         if self.plan_type == '':
             self.plan_type = None
+        validate_upload_size('file', self.file)
         self.validate_media_coherence(self.media_type, self.plan_type, self.file)
 
     def save(self, *args, **kwargs):
@@ -243,6 +332,10 @@ class StudioAbout(models.Model):
     image = models.ImageField(upload_to='about/', blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        super().clean()
+        validate_upload_size('image', self.image)
+
     def __str__(self):
         return self.title
 
@@ -265,6 +358,10 @@ class TeamMember(models.Model):
     avatar = models.ImageField(upload_to='team/', blank=True, null=True)
     order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        super().clean()
+        validate_upload_size('avatar', self.avatar)
 
     class Meta:
         ordering = ['order', 'id']

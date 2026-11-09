@@ -27,3 +27,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role', 'date_joined')
         read_only_fields = ('id', 'username', 'role', 'date_joined')
+
+
+class LogoutRequestSerializer(serializers.Serializer):
+    refresh = serializers.CharField()
+
+
+class LogoutErrorSerializer(serializers.Serializer):
+    error = serializers.CharField()
