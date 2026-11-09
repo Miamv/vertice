@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.models import Brand, Media, ProfessionalProfile, Project, StudioAbout, TeamMember
+from core.models import Contact, Media, ProfessionalProfile, Project, StudioAbout, TeamMember
 
 User = get_user_model()
 
@@ -289,11 +289,6 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual(res_inactive_admin.status_code, status.HTTP_200_OK)
 
     def test_public_endpoints_isolate_data_by_profile_slug_and_reject_cross_studio_project_detail(self):
-        brand_a = Brand.objects.create(name='Marca Estudio Uno')
-        brand_b = Brand.objects.create(name='Marca Estudio Dos')
-        self.project_one.brands.add(brand_a)
-        self.project_two.brands.add(brand_b)
-
         about_a = StudioAbout.objects.create(profile=self.profile, title='Nosotros Uno')
         StudioAbout.objects.create(profile=self.other_profile, title='Nosotros Dos')
 
@@ -330,7 +325,7 @@ class RolePermissionTestCase(APITestCase):
         )
         self.assertEqual(own_detail.status_code, status.HTTP_200_OK)
 
-        # About, Team, Media y Brands filtrados por profile_slug=estudio-uno
+        # About, Team y Media filtrados por profile_slug=estudio-uno
         about_res = self.client.get('/api/about/?profile_slug=estudio-uno')
         self.assertEqual([a['id'] for a in about_res.data], [about_a.id])
 
@@ -339,45 +334,6 @@ class RolePermissionTestCase(APITestCase):
 
         media_res = self.client.get('/api/media/?profile_slug=estudio-uno')
         self.assertEqual([m['id'] for m in media_res.data], [media_a.id])
-
-        brands_res = self.client.get('/api/brands/?profile_slug=estudio-uno')
-        self.assertEqual([b['id'] for b in brands_res.data], [brand_a.id])
-
-    def test_global_brand_write_restricted_to_admin_and_owner_can_associate_brand_ids_on_project(self):
-        # 1. OWNER no puede crear, editar ni eliminar marcas globales
-        owner_brand_create = self.client.post(
-            '/api/brands/',
-            {'name': 'Marca Intento Owner'},
-            format='json',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(owner_brand_create.status_code, status.HTTP_403_FORBIDDEN)
-
-        # 2. ADMIN sí puede crear marcas globales
-        admin_brand_create = self.client.post(
-            '/api/brands/',
-            {'name': 'Marca Global Admin'},
-            format='json',
-            **self._auth(self.admin),
-        )
-        self.assertEqual(admin_brand_create.status_code, status.HTTP_201_CREATED)
-        brand_id = admin_brand_create.data['id']
-
-        owner_brand_delete = self.client.delete(
-            f'/api/brands/{brand_id}/',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(owner_brand_delete.status_code, status.HTTP_403_FORBIDDEN)
-
-        # 3. OWNER puede asociar marcas existentes a su propio proyecto mediante `brand_ids`
-        patch_proj = self.client.patch(
-            f'/api/projects/{self.project_one.id}/',
-            {'brand_ids': [brand_id]},
-            format='json',
-            **self._auth(self.owner_one),
-        )
-        self.assertEqual(patch_proj.status_code, status.HTTP_200_OK)
-        self.assertEqual([b['id'] for b in patch_proj.data['brands']], [brand_id])
 
     def test_profile_and_studio_content_hardened_permissions(self):
         # 1. OWNER no puede crear ni eliminar un ProfessionalProfile
@@ -398,12 +354,21 @@ class RolePermissionTestCase(APITestCase):
         # 2. OWNER puede actualizar datos de su propio estudio pero no cambiar slug ni is_active
         update_own_res = self.client.patch(
             f'/api/profiles/{self.profile.slug}/',
-            {'phone': '+5492615550000', 'specialty': 'Arquitectura Sustentable'},
+            {
+                'contact_email': 'contacto@vertice.com',
+                'phone': '+54 9 261 555-1234',
+                'location': 'Mendoza, Argentina',
+                'instagram': '@vertice.estudio',
+                'specialty': 'Arquitectura Sustentable',
+            },
             format='json',
             **self._auth(self.owner_one),
         )
         self.assertEqual(update_own_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(update_own_res.data['phone'], '+5492615550000')
+        self.assertEqual(update_own_res.data['contact_email'], 'contacto@vertice.com')
+        self.assertEqual(update_own_res.data['phone'], '+54 9 261 555-1234')
+        self.assertEqual(update_own_res.data['location'], 'Mendoza, Argentina')
+        self.assertEqual(update_own_res.data['instagram'], '@vertice.estudio')
 
         change_slug_res = self.client.patch(
             f'/api/profiles/{self.profile.slug}/',
@@ -646,5 +611,239 @@ class RolePermissionTestCase(APITestCase):
         self.assertEqual(self.profile.specialty, 'Actualizado por ID sin colisión')
         self.assertEqual(numeric_studio.specialty, '')
 
+    def test_project_google_earth_and_location_managed_only_by_admin_and_own_studio_owner(self):
+        # 1. OWNER de su propio estudio puede actualizar location y google_earth_url
+        owner_res = self.client.patch(
+            f'/api/projects/{self.project_one.id}/',
+            {
+                'location': 'Chacras de Coria, Mendoza',
+                'google_earth_url': 'https://earth.google.com/web/search/Chacras+de+Coria',
+            },
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_res.data['location'], 'Chacras de Coria, Mendoza')
+        self.assertEqual(
+            owner_res.data['google_earth_url'],
+            'https://earth.google.com/web/search/Chacras+de+Coria',
+        )
+
+        # 2. COLLABORATOR del mismo estudio NO puede modificar google_earth_url ni location (403)
+        collab_res = self.client.patch(
+            f'/api/projects/{self.project_one.id}/',
+            {'google_earth_url': 'https://earth.google.com/web/search/Otro+Lugar'},
+            format='json',
+            **self._auth(self.collab_one),
+        )
+        self.assertEqual(collab_res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. OWNER no puede modificar google_earth_url de un proyecto ajeno (403)
+        foreign_owner_res = self.client.patch(
+            f'/api/projects/{self.project_two.id}/',
+            {'google_earth_url': 'https://earth.google.com/web/search/Intruso'},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(foreign_owner_res.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. ADMIN puede modificar google_earth_url de cualquier proyecto
+        admin_res = self.client.patch(
+            f'/api/projects/{self.project_two.id}/',
+            {
+                'location': 'Bariloche, Río Negro',
+                'google_earth_url': 'https://earth.google.com/web/search/Bariloche',
+            },
+            format='json',
+            **self._auth(self.admin),
+        )
+        self.assertEqual(admin_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(admin_res.data['location'], 'Bariloche, Río Negro')
+
+    def test_contact_management_status_project_association_and_filters(self):
+        # 1. Creación pública ignora estado forzado y arranca siempre en 'pending'
+        create_res = self.client.post(
+            '/api/contacts/',
+            {
+                'profile': self.profile.id,
+                'project': self.project_one.id,
+                'name': 'Interesado Uno',
+                'email': 'interesado1@test.com',
+                'message': 'Consulta sobre Proyecto Uno',
+                'status': 'closed',
+            },
+            format='json',
+        )
+        self.assertEqual(create_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_res.data['status'], Contact.StatusChoices.PENDING)
+        self.assertEqual(create_res.data['status_display'], 'Pendiente')
+        self.assertEqual(create_res.data['project'], self.project_one.id)
+        self.assertEqual(create_res.data['project_title'], self.project_one.title)
+        contact_id = create_res.data['id']
+
+        # 2. Creación pública rechaza asociar un proyecto de otro estudio (400 Bad Request)
+        cross_project_create = self.client.post(
+            '/api/contacts/',
+            {
+                'profile': self.profile.id,
+                'project': self.project_two.id,
+                'name': 'Interesado Cruzado',
+                'email': 'cruzado@test.com',
+                'message': 'Intento asociar proyecto ajeno',
+            },
+            format='json',
+        )
+        self.assertEqual(cross_project_create.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', cross_project_create.data)
+
+        # 3. COLLABORATOR puede listar y ver detalle, pero NO puede actualizar estado ni proyecto (403)
+        collab_list = self.client.get('/api/contacts/', **self._auth(self.collab_one))
+        self.assertEqual(collab_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(collab_list.data), 1)
+
+        collab_patch = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.IN_REVIEW},
+            format='json',
+            **self._auth(self.collab_one),
+        )
+        self.assertEqual(collab_patch.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 4. OWNER puede cambiar el estado ('in_review', 'responded', 'closed') y asociar/desasociar proyecto propio
+        owner_patch_review = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.IN_REVIEW, 'project': None},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_patch_review.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_patch_review.data['status'], Contact.StatusChoices.IN_REVIEW)
+        self.assertEqual(owner_patch_review.data['status_display'], 'En revisión')
+        self.assertIsNone(owner_patch_review.data['project'])
+
+        owner_patch_responded = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'status': Contact.StatusChoices.RESPONDED, 'project': self.project_one.id},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_patch_responded.status_code, status.HTTP_200_OK)
+        self.assertEqual(owner_patch_responded.data['status'], Contact.StatusChoices.RESPONDED)
+        self.assertEqual(owner_patch_responded.data['project'], self.project_one.id)
+
+        # 5. OWNER NO puede asociar un proyecto de otro estudio a su consulta (400 Bad Request)
+        owner_foreign_proj = self.client.patch(
+            f'/api/contacts/{contact_id}/',
+            {'project': self.project_two.id},
+            format='json',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(owner_foreign_proj.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('project', owner_foreign_proj.data)
+
+        # 6. Filtros por estado, proyecto y rango de fechas
+        second_contact = Contact.objects.create(
+            profile=self.profile,
+            name='Interesado Dos',
+            email='interesado2@test.com',
+            message='Segunda consulta sin proyecto',
+            status=Contact.StatusChoices.CLOSED,
+        )
+
+        by_status_responded = self.client.get(
+            f'/api/contacts/?status={Contact.StatusChoices.RESPONDED}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_status_responded.data], [contact_id])
+
+        by_status_closed = self.client.get(
+            f'/api/contacts/?status={Contact.StatusChoices.CLOSED}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_status_closed.data], [second_contact.id])
+
+        by_project_one = self.client.get(
+            f'/api/contacts/?project={self.project_one.id}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_project_one.data], [contact_id])
+
+        by_project_none = self.client.get(
+            '/api/contacts/?project=none',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual([c['id'] for c in by_project_none.data], [second_contact.id])
+
+        today_str = second_contact.created_at.strftime('%Y-%m-%d')
+        by_date = self.client.get(
+            f'/api/contacts/?date_from={today_str}&date_to={today_str}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(len(by_date.data), 2)
+
+        future_date = '2099-01-01'
+        by_future_date = self.client.get(
+            f'/api/contacts/?date_from={future_date}',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(len(by_future_date.data), 0)
+
+    def test_invalid_contact_date_filters_return_400(self):
+        Contact.objects.create(
+            profile=self.profile,
+            name='Cliente',
+            email='cliente@example.com',
+            message='Consulta de prueba',
+        )
+
+        for filter_name in ('date', 'date_from', 'date_to'):
+            with self.subTest(filter_name=filter_name):
+                response = self.client.get(
+                    f'/api/contacts/?{filter_name}=2026-02-30',
+                    **self._auth(self.owner_one),
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class DecompressionBombUploadTestCase(APITestCase):
+    def setUp(self):
+        media_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(media_directory.cleanup)
+        media_settings = override_settings(MEDIA_ROOT=media_directory.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
+
+        self.admin = User.objects.create_user(
+            username='media_admin',
+            email='media-admin@example.com',
+            password='securepass123',
+            role=User.RoleChoices.ADMIN,
+        )
+        profile = ProfessionalProfile.objects.create(name='Estudio Prueba')
+        self.project = Project.objects.create(
+            profile=profile,
+            title='Proyecto Prueba',
+            description='Proyecto para probar validación de imágenes.',
+            category='architecture',
+        )
+
+    def test_huge_declared_gif_dimensions_return_validation_error(self):
+        huge_gif = bytearray(VALID_GIF)
+        huge_gif[6:8] = (20_000).to_bytes(2, 'little')
+        huge_gif[8:10] = (20_000).to_bytes(2, 'little')
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            '/api/media/',
+            {
+                'project': self.project.id,
+                'file': SimpleUploadedFile('huge.gif', bytes(huge_gif), content_type='image/gif'),
+                'media_type': 'image',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('file', response.data)
 
 

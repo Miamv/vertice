@@ -1,7 +1,23 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import Brand, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import (
+    MAX_UPLOAD_SIZE,
+    ProfessionalProfile,
+    Project,
+    Media,
+    Contact,
+    StudioAbout,
+    TeamMember,
+)
+
+
+def validate_upload_sizes(attrs):
+    for field_name, value in attrs.items():
+        if getattr(value, 'size', 0) > MAX_UPLOAD_SIZE:
+            raise serializers.ValidationError({
+                field_name: 'El archivo no puede superar los 10 MiB.'
+            })
 
 
 class AbsoluteMediaUrlMixin:
@@ -28,14 +44,6 @@ class AbsoluteMediaUrlMixin:
         return data
 
 
-class BrandSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
-    media_fields = ('logo',)
-
-    class Meta:
-        model = Brand
-        fields = ('id', 'name', 'logo')
-
-
 class ProfessionalProfileSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
     media_fields = ('avatar',)
 
@@ -45,6 +53,7 @@ class ProfessionalProfileSerializer(AbsoluteMediaUrlMixin, serializers.ModelSeri
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate(self, attrs):
+        validate_upload_sizes(attrs)
         request = self.context.get('request')
         user = getattr(request, 'user', None)
         is_admin = bool(
@@ -73,6 +82,7 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
         fields = ('id', 'project', 'file', 'media_type', 'zone', 'plan_type')
 
     def validate(self, attrs):
+        validate_upload_sizes(attrs)
         instance = self.instance
         media_type = attrs.get('media_type', getattr(instance, 'media_type', None))
         plan_type = attrs.get('plan_type', getattr(instance, 'plan_type', None))
@@ -92,14 +102,6 @@ class MediaSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
 class ProjectSerializer(serializers.ModelSerializer):
     profile_slug = serializers.ReadOnlyField(source='profile.slug')
     profile_name = serializers.ReadOnlyField(source='profile.name')
-    brands = BrandSerializer(many=True, read_only=True)
-    brand_ids = serializers.PrimaryKeyRelatedField(
-        many=True,
-        write_only=True,
-        queryset=Brand.objects.all(),
-        source='brands',
-        required=False,
-    )
     media = MediaSerializer(many=True, read_only=True)
     cover_image = serializers.SerializerMethodField()
 
@@ -113,8 +115,9 @@ class ProjectSerializer(serializers.ModelSerializer):
             'title',
             'description',
             'category',
-            'brands',
-            'brand_ids',
+            'location',
+            'google_earth_url',
+            'order',
             'media',
             'cover_image',
             'created_at',
@@ -145,13 +148,15 @@ class ProjectSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(first_media.file.url)
         return first_media.file.url
 
-    def get_cover_image(self, obj):
+    def get_cover_image(self, obj: Project) -> str | None:
         return self._get_cover_url(obj)
 
 
 class ContactSerializer(serializers.ModelSerializer):
     profile_name = serializers.ReadOnlyField(source='profile.name')
     profile_slug = serializers.ReadOnlyField(source='profile.slug')
+    project_title = serializers.ReadOnlyField(source='project.title')
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
         model = Contact
@@ -160,9 +165,13 @@ class ContactSerializer(serializers.ModelSerializer):
             'profile',
             'profile_name',
             'profile_slug',
+            'project',
+            'project_title',
             'name',
             'email',
             'message',
+            'status',
+            'status_display',
             'created_at',
             'updated_at',
         )
@@ -171,6 +180,37 @@ class ContactSerializer(serializers.ModelSerializer):
         if value and not value.is_active:
             raise serializers.ValidationError('El estudio destinatario no se encuentra disponible.')
         return value
+
+    def validate(self, attrs):
+        profile = attrs.get('profile', getattr(self.instance, 'profile', None))
+        project = attrs.get('project', getattr(self.instance, 'project', None))
+
+        if project is not None and profile is not None and project.profile_id != profile.id:
+            raise serializers.ValidationError({
+                'project': 'El proyecto seleccionado no pertenece al estudio de la consulta.'
+            })
+
+        # En creación pública, toda consulta inicia en estado 'pending' (Pendiente)
+        if self.instance is None:
+            request = self.context.get('request')
+            user = getattr(request, 'user', None)
+            can_set_initial_status = bool(
+                user
+                and user.is_authenticated
+                and (
+                    user.is_superuser
+                    or getattr(user, 'role', None) == 'ADMIN'
+                    or (
+                        getattr(user, 'role', None) == 'OWNER'
+                        and profile is not None
+                        and profile.users.filter(id=user.id).exists()
+                    )
+                )
+            )
+            if not can_set_initial_status:
+                attrs['status'] = Contact.StatusChoices.PENDING
+
+        return attrs
 
 
 class StudioAboutSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
@@ -189,6 +229,10 @@ class StudioAboutSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
             'updated_at',
         )
 
+    def validate(self, attrs):
+        validate_upload_sizes(attrs)
+        return attrs
+
 
 class TeamMemberSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
     media_fields = ('avatar',)
@@ -206,3 +250,7 @@ class TeamMemberSerializer(AbsoluteMediaUrlMixin, serializers.ModelSerializer):
             'order',
             'created_at',
         )
+
+    def validate(self, attrs):
+        validate_upload_sizes(attrs)
+        return attrs

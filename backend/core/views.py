@@ -1,11 +1,10 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import viewsets
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from .models import Brand, ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
+from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
 from .serializers import (
-    BrandSerializer,
     ProfessionalProfileSerializer,
     ProjectSerializer,
     MediaSerializer,
@@ -18,7 +17,6 @@ from users.permissions import (
     CanUploadMedia,
     CanManageProfile,
     CanManageContact,
-    CanManageBrand,
     CanManageStudioContent,
 )
 
@@ -54,30 +52,6 @@ def _filter_by_profile_params(qs, request, prefix='profile'):
             return qs.none()
 
     return qs
-
-
-class BrandViewSet(viewsets.ModelViewSet):
-    queryset = Brand.objects.all().order_by('id')
-    serializer_class = BrandSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        profile_slug = self.request.query_params.get('profile_slug')
-        profile_id = self.request.query_params.get('profile')
-
-        if profile_slug or (profile_id is not None and profile_id != ''):
-            if not _is_platform_admin(self.request.user):
-                qs = qs.filter(projects__profile__is_active=True)
-            if _is_studio_member_role(self.request.user):
-                qs = qs.filter(projects__profile__users=self.request.user)
-            qs = _filter_by_profile_params(qs, self.request, prefix='projects__profile').distinct()
-
-        return qs
-
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [CanManageBrand()]
 
 
 class ProfessionalProfileViewSet(viewsets.ModelViewSet):
@@ -155,7 +129,7 @@ class ProfessionalProfileViewSet(viewsets.ModelViewSet):
 
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.select_related('profile').prefetch_related('media', 'brands').order_by('-created_at')
+    queryset = Project.objects.select_related('profile').prefetch_related('media').order_by('order', '-created_at')
     serializer_class = ProjectSerializer
 
     def get_queryset(self):
@@ -239,8 +213,42 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
 
 
 class ContactViewSet(viewsets.ModelViewSet):
-    queryset = Contact.objects.select_related('profile').order_by('-created_at')
+    queryset = Contact.objects.select_related('profile', 'project').order_by('-created_at')
     serializer_class = ContactSerializer
+
+    def _apply_contact_filters(self, qs):
+        qs = _filter_by_profile_params(qs, self.request, prefix='profile')
+
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+
+        project_param = self.request.query_params.get('project')
+        if project_param is not None and project_param != '':
+            if str(project_param).lower() in ('none', 'null', '0'):
+                qs = qs.filter(project__isnull=True)
+            elif str(project_param).isdigit():
+                qs = qs.filter(project_id=int(project_param))
+            else:
+                return qs.none()
+
+        date_filters = (
+            ('date', 'created_at__date'),
+            ('date_from', 'created_at__date__gte'),
+            ('date_to', 'created_at__date__lte'),
+        )
+        date_field = serializers.DateField()
+        for parameter, lookup in date_filters:
+            raw_date = self.request.query_params.get(parameter)
+            if not raw_date:
+                continue
+            try:
+                parsed_date = date_field.run_validation(raw_date)
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({parameter: exc.detail}) from exc
+            qs = qs.filter(**{lookup: parsed_date})
+
+        return qs
 
     def get_queryset(self):
         user = self.request.user
@@ -249,11 +257,11 @@ class ContactViewSet(viewsets.ModelViewSet):
 
         qs = super().get_queryset()
         if _is_platform_admin(user):
-            return _filter_by_profile_params(qs, self.request, prefix='profile')
+            return self._apply_contact_filters(qs)
 
         if user.role in (user.RoleChoices.OWNER, user.RoleChoices.COLLABORATOR):
             qs = qs.filter(profile__users=user)
-            return _filter_by_profile_params(qs, self.request, prefix='profile')
+            return self._apply_contact_filters(qs)
 
         return Contact.objects.none()
 

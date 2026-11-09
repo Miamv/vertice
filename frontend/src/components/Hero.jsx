@@ -1,23 +1,20 @@
 import { useMemo, useState } from 'react';
 import studio from '../config/studio';
 import { resolveMediaUrl } from '../services/api';
-
-function VerticeMark() {
-  return (
-    <svg width="78" height="58" viewBox="0 0 98 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path d="M12 68 V18 L28 8 L28 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-      <path d="M26 68 V28 L44 16 L44 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-      <path d="M42 68 V38 L60 26 L60 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-    </svg>
-  );
-}
+import useScrollTo from '../hooks/useScrollTo';
 
 export default function Hero({ profile }) {
   const [failedUrl, setFailedUrl] = useState(null);
+  const scrollTo = useScrollTo();
   const avatarUrl = useMemo(() => resolveMediaUrl(profile?.avatar), [profile?.avatar]);
   const heroImage = avatarUrl && failedUrl !== avatarUrl ? avatarUrl : studio.heroImage;
-  const studioTitle = profile?.name || studio.platformName || 'VÉRTICE';
-  const specialty = profile?.specialty?.trim() || '';
+  const studioTitle = profile?.name?.trim() || studio.platformName || 'Vértice';
+  const basePath = profile?.slug ? `/estudios/${profile.slug}` : '/';
+
+  function handleExploreClick(e) {
+    e.preventDefault();
+    scrollTo('proyectos', basePath);
+  }
 
   return (
     <section id="inicio" className="vertice-hero">
@@ -33,30 +30,23 @@ export default function Hero({ profile }) {
       </div>
 
       <div className="vertice-hero__inner container">
+        <div className="vertice-hero__eyebrow">
+          <span className="vertice-hero__eyebrow-dot" aria-hidden="true" />
+          <span className="vertice-hero__eyebrow-text">{studioTitle}</span>
+        </div>
+
         <div className="vertice-hero__lockup">
-          <span className="vertice-hero__mark">
-            <VerticeMark />
-          </span>
           <div className="vertice-hero__titles">
-            <h1 className="vertice-hero__title">{studioTitle.toUpperCase()}</h1>
-            {specialty && (
-              <p
-                className="mb-0 mt-1"
-                style={{
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  fontSize: '0.85rem',
-                  opacity: 0.85,
-                }}
-              >
-                {specialty}
-              </p>
-            )}
+            <h1 className="vertice-hero__title">
+              <span className="vertice-hero__title-sans">Arquitectura que habita</span>
+              <span className="vertice-hero__title-serif">el espacio con intención.</span>
+            </h1>
           </div>
         </div>
 
-        <a href="#proyectos" className="vertice-hero__cta">
-          Explorar proyectos
+        <a href="#proyectos" className="vertice-hero__cta" onClick={handleExploreClick}>
+          <span>Explorar proyectos</span>
+          <span className="vertice-hero__cta-arrow" aria-hidden="true">↓</span>
         </a>
       </div>
     </section>

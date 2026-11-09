@@ -8,8 +8,53 @@ export default function Navbar({ studioContext }) {
   const scrollTo = useScrollTo();
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
   const menuRef = useRef(null);
   const location = useLocation();
+
+  const isPortfolioHome =
+    location.pathname === '/' || /^\/estudios\/[^/]+\/?$/.test(location.pathname);
+
+  useEffect(() => {
+    let ticking = false;
+    lastScrollYRef.current = Math.max(window.scrollY || 0, 0);
+
+    function updateNavbarOnScroll() {
+      const currentY = Math.max(window.scrollY || 0, 0);
+      const prevY = lastScrollYRef.current;
+      const delta = currentY - prevY;
+
+      const nextScrolled = currentY > 24;
+      setIsScrolled((prev) => (prev === nextScrolled ? prev : nextScrolled));
+
+      if (currentY <= 16) {
+        setIsHidden(false);
+        lastScrollYRef.current = currentY;
+      } else if (delta > 6 && currentY > 64) {
+        setIsHidden(true);
+        setMenuOpen(false);
+        lastScrollYRef.current = currentY;
+      } else if (delta < -6) {
+        setIsHidden(false);
+        lastScrollYRef.current = currentY;
+      }
+
+      ticking = false;
+    }
+
+    function handleScroll() {
+      if (!ticking) {
+        window.requestAnimationFrame(updateNavbarOnScroll);
+        ticking = true;
+      }
+    }
+
+    updateNavbarOnScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const roleLabel = user?.role ?? '';
   const canAccessPanel =
@@ -27,24 +72,18 @@ export default function Navbar({ studioContext }) {
   const basePath = resolvedSlug ? `/estudios/${resolvedSlug}` : '/';
 
   const navLinks = [
-    { label: 'Home', sectionId: null, href: basePath, show: true },
-    {
-      label: 'Nosotros',
-      sectionId: 'nosotros',
-      href: `${basePath}#nosotros`,
-      show: !activeProfile || Boolean(studioContext?.hasAbout),
-    },
-    {
-      label: 'Equipo',
-      sectionId: 'equipo',
-      href: `${basePath}#equipo`,
-      show: Boolean(activeProfile && studioContext?.hasTeam),
-    },
+    { label: 'Home', sectionId: 'inicio', href: basePath, show: true },
     {
       label: 'Proyectos',
       sectionId: 'proyectos',
       href: `${basePath}#proyectos`,
       show: true,
+    },
+    {
+      label: 'Nosotros',
+      sectionId: 'nosotros',
+      href: `${basePath}#nosotros`,
+      show: !activeProfile || Boolean(studioContext?.hasTeam || studioContext?.hasAbout),
     },
     {
       label: 'Contacto',
@@ -63,6 +102,7 @@ export default function Navbar({ studioContext }) {
   if (prevMenuKey.path !== location.pathname || prevMenuKey.user !== user) {
     setPrevMenuKey({ path: location.pathname, user });
     setMenuOpen(false);
+    setIsHidden(false);
   }
 
   useEffect(() => {
@@ -99,21 +139,20 @@ export default function Navbar({ studioContext }) {
   }
 
   return (
-    <header className="vertice-navbar">
+    <header
+      className={`vertice-navbar ${isPortfolioHome ? 'vertice-navbar--home' : ''} ${
+        isScrolled ? 'is-scrolled' : ''
+      } ${isHidden ? 'is-hidden' : ''}`}
+    >
       <nav className="navbar navbar-expand-lg vertice-navbar__nav">
         <div className="container vertice-navbar__container">
           <Link
             className="vertice-navbar__brand"
             to={basePath}
+            onClick={(e) => handleAnchorClick(e, 'inicio')}
             aria-label={`${brandName} — inicio`}
           >
-            <span className="vertice-navbar__brand-mark" aria-hidden="true">
-              <svg width="34" height="26" viewBox="0 0 98 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 68 V18 L28 8 L28 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-                <path d="M26 68 V28 L44 16 L44 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-                <path d="M42 68 V38 L60 26 L60 68" stroke="currentColor" strokeWidth="2.8" fill="none" />
-              </svg>
-            </span>
+            <span className="vertice-navbar__brand-dot" aria-hidden="true" />
             <span className="vertice-navbar__brand-name">{brandName}</span>
           </Link>
 
@@ -135,14 +174,14 @@ export default function Navbar({ studioContext }) {
                 <li className="nav-item" key={link.label}>
                   {link.sectionId ? (
                     <a
-                      className="nav-link"
+                      className="nav-link vertice-navbar__link"
                       href={link.href}
                       onClick={(e) => handleAnchorClick(e, link.sectionId)}
                     >
                       {link.label}
                     </a>
                   ) : (
-                    <Link className="nav-link" to={link.href}>
+                    <Link className="nav-link vertice-navbar__link" to={link.href}>
                       {link.label}
                     </Link>
                   )}
@@ -150,8 +189,8 @@ export default function Navbar({ studioContext }) {
               ))}
 
               {canAccessPanel && (
-                <li className="nav-item ms-lg-2">
-                  <Link to="/admin" className="nav-link fw-semibold" style={{ color: 'var(--color-ink)' }}>
+                <li className="nav-item ms-lg-2 my-1 my-lg-0">
+                  <Link to="/admin" className="vertice-navbar__admin-pill">
                     Admin
                   </Link>
                 </li>
@@ -159,31 +198,25 @@ export default function Navbar({ studioContext }) {
 
               {user ? (
                 <li
-                  className="nav-item d-flex align-items-center ms-lg-3 my-2 my-lg-0 vertice-userbox"
+                  className="nav-item d-flex align-items-center ms-lg-2 my-2 my-lg-0 vertice-userbox"
                   ref={menuRef}
                 >
                   <button
                     type="button"
-                    className="vertice-navbar__user vertice-userbox__btn"
+                    className="vertice-userbox__trigger"
                     aria-haspopup="menu"
                     aria-expanded={menuOpen}
-                    aria-label="Cuenta de usuario"
+                    aria-label={`Cuenta de usuario (${roleLabel})`}
                     title="Cuenta de usuario"
                     onClick={() => setMenuOpen((v) => !v)}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <circle cx="12" cy="8" r="4.2" stroke="currentColor" strokeWidth="1.6" />
-                      <path d="M5 20 C6.8 15.2 17.2 15.2 19 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-link bg-transparent border-0 px-0 ms-2 text-capitalize fw-semibold"
-                    style={{ color: 'var(--color-ink)', cursor: 'pointer' }}
-                    onClick={() => setMenuOpen((v) => !v)}
-                    aria-label={`Rol de usuario: ${roleLabel}`}
-                  >
-                    {roleLabel}
+                    <span className="vertice-navbar__user" aria-hidden="true">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="8" r="4.2" stroke="currentColor" strokeWidth="1.7" />
+                        <path d="M5 20 C6.8 15.2 17.2 15.2 19 20" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                    <span className="vertice-userbox__role">{roleLabel}</span>
                   </button>
                   {menuOpen && (
                     <div className="vertice-userbox__menu" role="menu">

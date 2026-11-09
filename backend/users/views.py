@@ -4,8 +4,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
+from drf_spectacular.utils import extend_schema
 
-from .serializers import UserRegisterSerializer, UserProfileSerializer
+from .serializers import (
+    LogoutErrorSerializer,
+    LogoutRequestSerializer,
+    UserProfileSerializer,
+    UserRegisterSerializer,
+)
 
 User = get_user_model()
 
@@ -27,6 +33,10 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 class LogoutView(views.APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=LogoutRequestSerializer,
+        responses={205: None, 400: LogoutErrorSerializer},
+    )
     def post(self, request):
         refresh_token = request.data.get('refresh')
         if not refresh_token:

@@ -1,22 +1,46 @@
 :root {
-  --color-ink: #0f1b2a;
+  /* Paleta Vértice Editorial: Fondo cálido original + Azul Tinta (#1D2B5C) + Esmeralda (#00A060) */
+  --color-ink: #1d2b5c;
+  --color-ink-deep: #141f43;
+  --color-ink-soft: rgba(29, 43, 92, 0.08);
+  --color-emerald: #00a060;
+  --color-emerald-hover: #008750;
+  --color-emerald-soft: rgba(0, 160, 96, 0.12);
   --color-whitewash: #edeae2;
-  --color-sage: #8c9b8a;
-  --color-oak: #b8895f;
-  --color-steel: #6e828c;
-  --color-ember: #c1663b;
+  --color-cream: #fdfbf8;
+  --color-sage: #00a060;
+  --color-oak: #1d2b5c;
+  --color-steel: #3b4d80;
+  --color-ember: #00a060;
+  --color-danger: #c93b3b;
+
   --color-primary: var(--color-ink);
-  --color-accent: var(--color-ember);
+  --color-accent: var(--color-emerald);
   --color-bg: var(--color-whitewash);
   --color-surface: #ffffff;
-  --color-text: #1a1a1a;
-  --color-text-muted: #6b6b6b;
-  --font-heading: 'Fraunces', 'Georgia', serif;
-  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --color-text: #1d2b5c;
+  --color-text-muted: rgba(29, 43, 92, 0.66);
+
+  /* Tipografías: Display Geométrica/Editorial (Montserrat + Plus Jakarta Sans) */
+  --font-display: 'Montserrat', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', 'Montserrat', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-  --border-radius: 14px;
-  --border-color: rgba(15, 27, 42, 0.12);
-  --shadow-sm: 0 2px 10px rgba(15, 27, 42, 0.06);
-  --shadow-md: 0 8px 24px rgba(15, 27, 42, 0.1);
-  --transition: 0.28s ease;
+
+  --border-radius: 16px;
+  --border-color: rgba(29, 43, 92, 0.14);
+  --shadow-sm: 0 4px 14px rgba(29, 43, 92, 0.06);
+  --shadow-md: 0 12px 30px rgba(29, 43, 92, 0.12);
+  --shadow-emerald: 0 10px 26px rgba(0, 160, 96, 0.28);
+  --transition: 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Bootstrap 5 overrides para coherencia global */
+  --bs-dark: #1d2b5c;
+  --bs-dark-rgb: 29, 43, 92;
+  --bs-primary: #1d2b5c;
+  --bs-primary-rgb: 29, 43, 92;
+  --bs-success: #00a060;
+  --bs-success-rgb: 0, 160, 96;
+  --bs-body-color: #1d2b5c;
+  --bs-body-font-family: var(--font-body);
 }

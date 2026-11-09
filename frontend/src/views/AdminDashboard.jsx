@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import {
   getProfiles,
+  updateStudioProfile,
   getProjects,
   deleteProject,
   resolveMediaUrl,
@@ -13,10 +14,97 @@ import {
   createAbout,
   updateAbout,
   getContacts,
+  updateContact,
   deleteContact,
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+
+const CONTACT_STATUS_OPTIONS = [
+  {
+    value: 'pending',
+    label: 'Pendiente',
+    meaning: 'Consulta recibida',
+    bg: '#fff3bf',
+    color: '#8f5b00',
+  },
+  {
+    value: 'in_review',
+    label: 'En revisión',
+    meaning: 'El estudio está evaluándola',
+    bg: '#d0ebff',
+    color: '#1864ab',
+  },
+  {
+    value: 'responded',
+    label: 'Respondida',
+    meaning: 'Ya se respondió',
+    bg: '#d3f9d8',
+    color: '#2b8a3e',
+  },
+  {
+    value: 'closed',
+    label: 'Cerrada',
+    meaning: 'La gestión terminó',
+    bg: '#e9ecef',
+    color: '#495057',
+  },
+];
+
+function getContactStatusMeta(status) {
+  return (
+    CONTACT_STATUS_OPTIONS.find((opt) => opt.value === status) || CONTACT_STATUS_OPTIONS[0]
+  );
+}
+
+function toLocalDateInputValue(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return String(iso).slice(0, 10);
+  }
+}
+
+function buildContactReplyMailto(contact, fallbackStudioName = 'Vértice') {
+  if (!contact?.email) return '#';
+  const rawStudio = (contact.profile_name || fallbackStudioName || 'Vértice').trim();
+  const shortStudio = rawStudio.replace(/^Estudio\s+/i, '').trim() || rawStudio;
+  const signatureStudio = /^Estudio\s+/i.test(rawStudio)
+    ? rawStudio
+    : `Estudio ${rawStudio}`;
+
+  const recipientName = (contact.name || '').trim() || 'Interesado/a';
+
+  let topicClause = '';
+  const serviceMatch = String(contact.message || '').match(
+    /\[Servicio requerido\]:\s*([^\n\r]+)/i
+  );
+  if (contact.project_title) {
+    topicClause = ` sobre el proyecto "${contact.project_title}"`;
+  } else if (serviceMatch && serviceMatch[1]?.trim()) {
+    topicClause = ` sobre ${serviceMatch[1].trim().toLowerCase()}`;
+  }
+
+  const subject = `Respuesta a tu consulta — ${shortStudio}`;
+  const body = [
+    `Hola, ${recipientName}:`,
+    '',
+    `Gracias por comunicarte con nuestro estudio. Hemos recibido tu consulta${topicClause} y nos gustaría brindarte más información.`,
+    '',
+    'Saludos,',
+    signatureStudio,
+  ].join('\r\n');
+
+  return `mailto:${contact.email.trim()}?subject=${encodeURIComponent(
+    subject
+  )}&body=${encodeURIComponent(body)}`;
+}
 
 function formatCategory(cat) {
   if (!cat) return 'General';
@@ -87,9 +175,15 @@ export default function AdminDashboard() {
   const [savingMember, setSavingMember] = useState(false);
   const [showMemberForm, setShowMemberForm] = useState(false);
 
-  // Nosotros (About) State
+  // Nosotros (About) e Información de Contacto State
   const [aboutRecord, setAboutRecord] = useState(null);
   const [aboutForm, setAboutForm] = useState({ title: '', description: '' });
+  const [studioContactForm, setStudioContactForm] = useState({
+    contact_email: '',
+    phone: '',
+    location: '',
+    instagram: '',
+  });
   const [aboutImageFile, setAboutImageFile] = useState(null);
   const [loadingAbout, setLoadingAbout] = useState(true);
   const [savingAbout, setSavingAbout] = useState(false);
@@ -98,7 +192,12 @@ export default function AdminDashboard() {
   const [contacts, setContacts] = useState([]);
   const [loadingContacts, setLoadingContacts] = useState(true);
   const [deletingContactId, setDeletingContactId] = useState(null);
+  const [updatingContactId, setUpdatingContactId] = useState(null);
   const [selectedContact, setSelectedContact] = useState(null);
+  const [contactStatusFilter, setContactStatusFilter] = useState('all');
+  const [contactDateFrom, setContactDateFrom] = useState('');
+  const [contactDateTo, setContactDateTo] = useState('');
+  const [contactSearchQuery, setContactSearchQuery] = useState('');
 
   // Feedback State
   const [feedback, setFeedback] = useState(null);
@@ -137,6 +236,12 @@ export default function AdminDashboard() {
         setLoadingAbout(true);
         setLoadingContacts(true);
         setSelectedProfileId(Number(matched.id));
+        setStudioContactForm({
+          contact_email: matched.contact_email || '',
+          phone: matched.phone || '',
+          location: matched.location || '',
+          instagram: matched.instagram || '',
+        });
         if (selectActiveStudio) {
           selectActiveStudio(matched);
         }
@@ -191,9 +296,19 @@ export default function AdminDashboard() {
     setShowMemberForm(false);
     setEditingMember(null);
     setSelectedContact(null);
+    setContactStatusFilter('all');
+    setContactDateFrom('');
+    setContactDateTo('');
+    setContactSearchQuery('');
 
     setSelectedProfileId(nextId);
     const targetObj = authorizedProfiles.find((p) => Number(p.id) === nextId);
+    setStudioContactForm({
+      contact_email: targetObj?.contact_email || '',
+      phone: targetObj?.phone || '',
+      location: targetObj?.location || '',
+      instagram: targetObj?.instagram || '',
+    });
     if (targetObj && selectActiveStudio) {
       selectActiveStudio(targetObj);
     }
@@ -402,7 +517,7 @@ export default function AdminDashboard() {
     setShowMemberForm(false);
   }
 
-  // Guardar Sección Nosotros (About asociado a `selectedProfileId`)
+  // Guardar Sección Nosotros e Información de Contacto (About + ProfessionalProfile asociados a `selectedProfileId`)
   async function handleSaveAbout(e) {
     e.preventDefault();
     if (!selectedProfileId) return;
@@ -410,31 +525,96 @@ export default function AdminDashboard() {
     setFeedback(null);
 
     try {
-      const data = new FormData();
-      data.append('profile', selectedProfileId);
-      data.append('title', aboutForm.title);
-      data.append('description', aboutForm.description);
-      if (aboutImageFile) {
-        data.append('image', aboutImageFile);
+      // 1. Actualizar datos de contacto y redes del estudio (ProfessionalProfile)
+      const profilePayload = {
+        contact_email: (studioContactForm.contact_email || '').trim(),
+        phone: (studioContactForm.phone || '').trim(),
+        location: (studioContactForm.location || '').trim(),
+        instagram: (studioContactForm.instagram || '').trim(),
+      };
+      const profileRes = await updateStudioProfile(selectedProfileId, profilePayload);
+      const updatedProfile = profileRes.data;
+
+      setAuthorizedProfiles((prev) =>
+        prev.map((p) => (Number(p.id) === Number(selectedProfileId) ? updatedProfile : p))
+      );
+      if (selectActiveStudio) {
+        selectActiveStudio(updatedProfile);
       }
 
-      if (aboutRecord && aboutRecord.id) {
-        const res = await updateAbout(aboutRecord.id, data);
-        setAboutRecord(res.data);
-        setFeedback({ type: 'success', message: 'Sección "Nosotros" actualizada con éxito.' });
-      } else {
-        const res = await createAbout(data);
-        setAboutRecord(res.data);
-        setFeedback({ type: 'success', message: 'Sección "Nosotros" guardada exitosamente.' });
+      // 2. Guardar o actualizar bloque institucional (StudioAbout) si fue completado o ya existe
+      const hasAboutInput = Boolean(
+        aboutRecord?.id ||
+          aboutForm.title.trim() ||
+          aboutForm.description.trim() ||
+          aboutImageFile
+      );
+
+      if (hasAboutInput) {
+        const data = new FormData();
+        data.append('profile', selectedProfileId);
+        data.append('title', aboutForm.title);
+        data.append('description', aboutForm.description);
+        if (aboutImageFile) {
+          data.append('image', aboutImageFile);
+        }
+
+        if (aboutRecord && aboutRecord.id) {
+          const res = await updateAbout(aboutRecord.id, data);
+          setAboutRecord(res.data);
+        } else {
+          const res = await createAbout(data);
+          setAboutRecord(res.data);
+        }
+        setAboutImageFile(null);
       }
-      setAboutImageFile(null);
+
+      setFeedback({
+        type: 'success',
+        message: 'Información institucional y de contacto actualizada con éxito.',
+      });
     } catch (err) {
+      const errData = err?.response?.data;
+      const specificMsg =
+        errData?.contact_email?.[0] ||
+        errData?.phone?.[0] ||
+        errData?.location?.[0] ||
+        errData?.instagram?.[0] ||
+        errData?.detail;
       setFeedback({
         type: 'danger',
-        message: err?.response?.data?.detail || 'Error al guardar la sección institucional.',
+        message: specificMsg || 'Error al guardar la información del estudio.',
       });
     } finally {
       setSavingAbout(false);
+    }
+  }
+
+  // Actualizar estado o proyecto asociado de una Consulta
+  async function handleUpdateContact(contact, updates) {
+    if (!selectedProfileId || !isAdminOrOwner) return;
+    setUpdatingContactId(contact.id);
+    setFeedback(null);
+    try {
+      const res = await updateContact(contact.id, updates);
+      const updated = res.data;
+      setContacts((prev) => prev.map((c) => (c.id === contact.id ? updated : c)));
+      setSelectedContact((prev) => (prev && prev.id === contact.id ? updated : prev));
+      setFeedback({
+        type: 'success',
+        message: `Consulta #${contact.id} actualizada correctamente.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'danger',
+        message:
+          err?.response?.data?.project?.[0] ||
+          err?.response?.data?.status?.[0] ||
+          err?.response?.data?.detail ||
+          'No se pudo actualizar la consulta.',
+      });
+    } finally {
+      setUpdatingContactId(null);
     }
   }
 
@@ -468,15 +648,82 @@ export default function AdminDashboard() {
     }
   }
 
-  // Filtro de proyectos
+  // Conteo de consultas por estado
+  const contactStatusCounts = useMemo(() => {
+    const counts = {
+      all: contacts.length,
+      pending: 0,
+      in_review: 0,
+      responded: 0,
+      closed: 0,
+    };
+    contacts.forEach((c) => {
+      const st = c.status || 'pending';
+      if (counts[st] !== undefined) {
+        counts[st] += 1;
+      }
+    });
+    return counts;
+  }, [contacts]);
+
+  // Filtro de consultas por estado, rango de fechas y texto (insensible a tildes/acentos)
+  const filteredContacts = useMemo(() => {
+    const normalize = (val) =>
+      String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const q = normalize(contactSearchQuery);
+
+    return contacts.filter((c) => {
+      const statusVal = c.status || 'pending';
+      if (contactStatusFilter !== 'all' && statusVal !== contactStatusFilter) {
+        return false;
+      }
+
+      if (contactDateFrom || contactDateTo) {
+        const itemDate = toLocalDateInputValue(c.created_at);
+        if (contactDateFrom && itemDate && itemDate < contactDateFrom) {
+          return false;
+        }
+        if (contactDateTo && itemDate && itemDate > contactDateTo) {
+          return false;
+        }
+      }
+
+      if (!q) return true;
+      const statusMeta = getContactStatusMeta(statusVal);
+      return (
+        normalize(c.name).includes(q) ||
+        normalize(c.email).includes(q) ||
+        normalize(c.message).includes(q) ||
+        normalize(c.project_title).includes(q) ||
+        normalize(statusMeta.label).includes(q)
+      );
+    });
+  }, [contacts, contactStatusFilter, contactDateFrom, contactDateTo, contactSearchQuery]);
+
+  // Filtro de proyectos (insensible a tildes/acentos y mayúsculas)
   const filteredProjects = useMemo(() => {
-    const q = filterQuery.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
+    const normalize = (val) =>
+      String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const sorted = [...projects].sort((a, b) => (Number(a.order) || 1) - (Number(b.order) || 1));
+    const q = normalize(filterQuery);
+    if (!q) return sorted;
+    return sorted.filter(
       (p) =>
-        (p.title && p.title.toLowerCase().includes(q)) ||
-        (p.category && p.category.toLowerCase().includes(q)) ||
-        (p.description && p.description.toLowerCase().includes(q))
+        normalize(p.title).includes(q) ||
+        normalize(p.category).includes(q) ||
+        normalize(formatCategory(p.category)).includes(q) ||
+        normalize(p.description).includes(q) ||
+        normalize(p.location).includes(q)
     );
   }, [projects, filterQuery]);
 
@@ -648,8 +895,12 @@ export default function AdminDashboard() {
               type="button"
               className="btn btn-dark rounded-pill px-4 py-2 fw-semibold d-inline-flex align-items-center gap-2"
               onClick={() => {
+                const nextOrder =
+                  team.length > 0
+                    ? Math.max(...team.map((m) => Number(m.order) || 0)) + 1
+                    : 1;
                 setEditingMember(null);
-                setMemberForm({ full_name: '', role: '', order: team.length });
+                setMemberForm({ full_name: '', role: '', order: nextOrder });
                 setMemberAvatarFile(null);
                 setShowMemberForm(true);
               }}
@@ -692,7 +943,7 @@ export default function AdminDashboard() {
                 className={`nav-link rounded-pill px-4 py-2 fw-semibold ${activeTab === 'about' ? 'active bg-dark text-white' : 'text-dark'}`}
                 onClick={() => setActiveTab('about')}
               >
-                Sección Nosotros
+                Nosotros
               </button>
             </li>
           </>
@@ -809,6 +1060,7 @@ export default function AdminDashboard() {
                       <th scope="col" style={{ width: '80px', paddingLeft: '1.25rem' }}>Portada</th>
                       <th scope="col">Título</th>
                       <th scope="col">Categoría</th>
+                      <th scope="col" style={{ width: '90px' }}>Orden</th>
                       <th scope="col" className="d-none d-md-table-cell">Descripción</th>
                       <th scope="col" className="text-end" style={{ paddingRight: '1.25rem' }}>Acciones</th>
                     </tr>
@@ -849,6 +1101,11 @@ export default function AdminDashboard() {
                           <td>
                             <span className="badge rounded-pill bg-light text-dark border px-2 py-1" style={{ fontSize: '0.75rem' }}>
                               {formatCategory(project.category)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="badge rounded-pill bg-light text-dark border px-2 py-1">
+                              #{project.order ?? 1}
                             </span>
                           </td>
                           <td className="d-none d-md-table-cell text-muted small" style={{ maxWidth: '300px' }}>
@@ -947,10 +1204,14 @@ export default function AdminDashboard() {
                     <label className="form-label small fw-semibold">Orden Visual</label>
                     <input
                       type="number"
+                      min="1"
                       className="form-control rounded-3"
                       value={memberForm.order}
-                      onChange={(e) => setMemberForm({ ...memberForm, order: parseInt(e.target.value, 10) || 0 })}
+                      onChange={(e) => setMemberForm({ ...memberForm, order: parseInt(e.target.value, 10) || 1 })}
                     />
+                    <div className="form-text" style={{ fontSize: '0.7rem' }}>
+                      1 = 1°, 2 = 2°...
+                    </div>
                   </div>
 
                   <div className="col-12">
@@ -1013,7 +1274,7 @@ export default function AdminDashboard() {
                 className="btn btn-dark rounded-pill px-4 py-2 fw-semibold"
                 onClick={() => {
                   setEditingMember(null);
-                  setMemberForm({ full_name: '', role: '', order: 0 });
+                  setMemberForm({ full_name: '', role: '', order: 1 });
                   setMemberAvatarFile(null);
                   setShowMemberForm(true);
                 }}
@@ -1110,88 +1371,202 @@ export default function AdminDashboard() {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 3: SECCIÓN NOSOTROS */}
+      {/* TAB 3: SECCIÓN NOSOTROS E INFORMACIÓN DE CONTACTO */}
       {/* ============================================================== */}
       {activeTab === 'about' && isAdminOrOwner && (
-        <div className="card border-0 shadow-sm rounded-4 p-4" style={{ background: '#fff' }}>
-          <div className="mb-4">
-            <h2 className="h5 fw-bold mb-1">
-              Configuración Institucional — {activeProfile.name}
-            </h2>
-            <p className="text-muted small mb-0">
-              Modifica el título, el manifiesto y el boceto arquitectónico lateral que se muestra en la sección &ldquo;Nosotros&rdquo; de {activeProfile.name}.
-            </p>
-          </div>
-
+        <div>
           {loadingAbout ? (
             <div className="text-center py-5">
               <LoadingSpinner />
             </div>
           ) : (
-            <form onSubmit={handleSaveAbout}>
-              <div className="row g-4">
-                <div className="col-12">
-                  <label className="form-label small fw-semibold">Título Principal *</label>
+            <form onSubmit={handleSaveAbout} className="d-flex flex-column gap-4">
+              {/* Tarjeta 1: Información Institucional (Sección Nosotros) */}
+              <div
+                className="card border-0 shadow-sm rounded-4 p-4"
+                style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+              >
+                <div className="mb-4">
+                  <h2 className="h5 fw-bold mb-1">
+                    Información Institucional — {activeProfile.name}
+                  </h2>
+                  <p className="text-muted small mb-0">
+                    Modifica el título, el manifiesto y la imagen panorámica de fondo que se muestran en la sección &ldquo;Nosotros&rdquo; de {activeProfile.name}.
+                  </p>
+                </div>
+
+                <div className="row g-4">
+                  <div className="col-12">
+                    <label className="form-label small fw-semibold">Título Principal</label>
+                    <input
+                      type="text"
+                      className="form-control rounded-3"
+                      placeholder="Ej. DISEÑAMOS EL ESPACIO QUE TRANSFORMA TU VIDA"
+                      value={aboutForm.title}
+                      onChange={(e) => setAboutForm({ ...aboutForm, title: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="col-12">
+                    <label className="form-label small fw-semibold">Cuerpo / Manifiesto del Estudio</label>
+                    <textarea
+                      rows={5}
+                      className="form-control rounded-3"
+                      placeholder="Describe la visión, metodología y trayectoria del estudio..."
+                      value={aboutForm.description}
+                      onChange={(e) => setAboutForm({ ...aboutForm, description: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="col-12 col-md-6">
+                    <label className="form-label small fw-semibold">Imagen de Fondo de la Sección (Panorámica)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-control rounded-3"
+                      onChange={(e) => setAboutImageFile(e.target.files[0] || null)}
+                    />
+                    <small className="text-muted d-block mt-1">
+                      Formatos recomendados: JPG, PNG o WebP horizontal. Si no tiene imagen, se mantiene el fondo institucional del estudio.
+                    </small>
+                  </div>
+
+                  {aboutRecord && aboutRecord.image && (
+                    <div className="col-12 col-md-6">
+                      <label className="form-label small fw-semibold d-block">Imagen de Fondo Actual</label>
+                      <div
+                        className="rounded-3 p-2 border d-inline-block"
+                        style={{ background: '#f8f9fa', maxWidth: '240px' }}
+                      >
+                        <img
+                          src={resolveMediaUrl(aboutRecord.image)}
+                          alt="Fondo institucional actual"
+                          className="img-fluid rounded"
+                          style={{ maxHeight: '160px', objectFit: 'cover' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tarjeta 2: Información de Contacto y Redes Sociales */}
+              <div
+                className="card border-0 shadow-sm rounded-4 p-4"
+                style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+              >
+                <div className="mb-4">
+                  <h2 className="h5 fw-bold mb-1">Información de Contacto y Redes</h2>
+                  <p className="text-muted small mb-0">
+                    Cómo pueden comunicarse los clientes e interesados con tu estudio. Se verá reflejado en la tarjeta de contacto y en el pie de página de la Home.
+                  </p>
+                </div>
+
+                <div className="d-flex flex-column gap-3">
+                  <div>
+                    <label className="form-label small fw-semibold d-inline-flex align-items-center gap-2 mb-1">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                      </svg>
+                      <span>Email de contacto</span>
+                    </label>
+                    <input
+                      type="email"
+                      className="form-control rounded-3"
+                      placeholder="contacto@vertice.com"
+                      value={studioContactForm.contact_email}
+                      onChange={(e) =>
+                        setStudioContactForm({
+                          ...studioContactForm,
+                          contact_email: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label small fw-semibold d-inline-flex align-items-center gap-2 mb-1">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                      </svg>
+                      <span>Teléfono</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control rounded-3"
+                      placeholder="+54 9 261 555-1234"
+                      value={studioContactForm.phone}
+                      onChange={(e) =>
+                        setStudioContactForm({ ...studioContactForm, phone: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label small fw-semibold d-inline-flex align-items-center gap-2 mb-1">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                        <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+                      </svg>
+                      <span>Instagram</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control rounded-3"
+                      placeholder="@vertice.estudio"
+                      value={studioContactForm.instagram}
+                      onChange={(e) =>
+                        setStudioContactForm({
+                          ...studioContactForm,
+                          instagram: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tarjeta 3: Ubicación del Estudio */}
+              <div
+                className="card border-0 shadow-sm rounded-4 p-4"
+                style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+              >
+                <div className="mb-3 d-flex align-items-center gap-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  <div>
+                    <h2 className="h5 fw-bold mb-0">Ubicación</h2>
+                    <p className="text-muted small mb-0">Ubicación principal de tu estudio</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label small fw-semibold mb-1">
+                    Ciudad / Provincia / País
+                  </label>
                   <input
                     type="text"
                     className="form-control rounded-3"
-                    placeholder="Ej. DISEÑAMOS EL ESPACIO QUE TRANSFORMA TU VIDA"
-                    value={aboutForm.title}
-                    onChange={(e) => setAboutForm({ ...aboutForm, title: e.target.value })}
-                    required
+                    placeholder="Mendoza, Argentina"
+                    value={studioContactForm.location}
+                    onChange={(e) =>
+                      setStudioContactForm({ ...studioContactForm, location: e.target.value })
+                    }
                   />
                 </div>
-
-                <div className="col-12">
-                  <label className="form-label small fw-semibold">Cuerpo / Manifiesto del Estudio *</label>
-                  <textarea
-                    rows={6}
-                    className="form-control rounded-3"
-                    placeholder="Describe la visión, metodología y trayectoria del estudio..."
-                    value={aboutForm.description}
-                    onChange={(e) => setAboutForm({ ...aboutForm, description: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div className="col-12 col-md-6">
-                  <label className="form-label small fw-semibold">Boceto Arquitectónico Lateral (Imagen)</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="form-control rounded-3"
-                    onChange={(e) => setAboutImageFile(e.target.files[0] || null)}
-                  />
-                  <small className="text-muted d-block mt-1">
-                    Formatos recomendados: JPG, PNG o WebP. Se adapta al marco técnico de la sección.
-                  </small>
-                </div>
-
-                {aboutRecord && aboutRecord.image && (
-                  <div className="col-12 col-md-6">
-                    <label className="form-label small fw-semibold d-block">Imagen Actual</label>
-                    <div
-                      className="rounded-3 p-2 border d-inline-block"
-                      style={{ background: '#f8f9fa', maxWidth: '240px' }}
-                    >
-                      <img
-                        src={resolveMediaUrl(aboutRecord.image)}
-                        alt="Boceto actual"
-                        className="img-fluid rounded"
-                        style={{ maxHeight: '160px', objectFit: 'contain' }}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
-              <div className="d-flex justify-content-end mt-4 pt-3 border-top">
+              <div className="d-flex justify-content-end pt-2">
                 <button
                   type="submit"
                   className="btn btn-dark rounded-pill px-4 py-2 fw-semibold"
                   disabled={savingAbout}
                 >
-                  {savingAbout ? 'Guardando cambios...' : 'Guardar Información Institucional'}
+                  {savingAbout ? 'Guardando cambios...' : 'Guardar Información Institucional y de Contacto'}
                 </button>
               </div>
             </form>
@@ -1219,64 +1594,270 @@ export default function AdminDashboard() {
               </p>
             </div>
           ) : (
-            <div
-              className="table-responsive rounded-4 shadow-sm"
-              style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
-            >
-              <table className="table table-hover align-middle mb-0">
-                <thead className="table-light">
-                  <tr style={{ fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                    <th scope="col" className="py-3 px-3">Fecha</th>
-                    <th scope="col" className="py-3 px-3">Remitente</th>
-                    <th scope="col" className="py-3 px-3">Mensaje</th>
-                    <th scope="col" className="py-3 px-3 text-end">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contacts.map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-3 small text-muted text-nowrap">
-                        {formatDate(c.created_at)}
-                      </td>
-                      <td className="px-3">
-                        <div className="fw-semibold small">{c.name}</div>
-                        <div className="small text-muted">{c.email}</div>
-                      </td>
-                      <td className="px-3 small text-muted" style={{ maxWidth: '340px' }}>
-                        <div
-                          className="text-truncate"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setSelectedContact(c)}
-                          title={c.message}
-                        >
-                          {c.message}
-                        </div>
-                      </td>
-                      <td className="px-3 text-end text-nowrap">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-dark rounded-pill px-3 me-1"
-                          onClick={() => setSelectedContact(c)}
-                        >
-                          Ver
-                        </button>
-                        {isAdminOrOwner && (
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline-danger rounded-pill px-2"
-                            disabled={deletingContactId === c.id}
-                            onClick={() => handleDeleteContact(c)}
-                            title="Eliminar consulta"
-                          >
-                            {deletingContactId === c.id ? '...' : '✕'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Píldoras de resumen por Estado */}
+              <div className="d-flex flex-wrap gap-2 mb-3">
+                <button
+                  type="button"
+                  className={`btn btn-sm rounded-pill px-3 py-1 fw-semibold ${
+                    contactStatusFilter === 'all' ? 'btn-dark' : 'btn-outline-secondary'
+                  }`}
+                  onClick={() => setContactStatusFilter('all')}
+                >
+                  Todas ({contactStatusCounts.all})
+                </button>
+                {CONTACT_STATUS_OPTIONS.map((opt) => {
+                  const isActive = contactStatusFilter === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className="btn btn-sm rounded-pill px-3 py-1 fw-semibold"
+                      style={{
+                        background: isActive ? opt.color : opt.bg,
+                        color: isActive ? '#fff' : opt.color,
+                        border: `1px solid ${opt.color}33`,
+                      }}
+                      title={opt.meaning}
+                      onClick={() =>
+                        setContactStatusFilter(isActive ? 'all' : opt.value)
+                      }
+                    >
+                      {opt.label} ({contactStatusCounts[opt.value] || 0})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Barra de filtros por búsqueda, estado y rango de fechas */}
+              <div
+                className="p-3 rounded-4 mb-3 shadow-sm"
+                style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+              >
+                <div className="row g-2 align-items-end">
+                  <div className="col-12 col-md-4">
+                    <label className="form-label small fw-semibold text-muted mb-1">
+                      Buscar consulta
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control form-control-sm rounded-pill px-3"
+                      placeholder="Remitente, email, proyecto o mensaje..."
+                      value={contactSearchQuery}
+                      onChange={(e) => setContactSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-12 col-sm-4 col-md-3">
+                    <label className="form-label small fw-semibold text-muted mb-1">
+                      Estado
+                    </label>
+                    <select
+                      className="form-select form-select-sm rounded-pill px-3"
+                      value={contactStatusFilter}
+                      onChange={(e) => setContactStatusFilter(e.target.value)}
+                      aria-label="Filtrar por estado de consulta"
+                    >
+                      <option value="all">Todos los estados</option>
+                      {CONTACT_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label} — {opt.meaning}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-6 col-sm-4 col-md-2">
+                    <label className="form-label small fw-semibold text-muted mb-1">
+                      Desde fecha
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm rounded-pill px-3"
+                      value={contactDateFrom}
+                      onChange={(e) => setContactDateFrom(e.target.value)}
+                      aria-label="Fecha desde"
+                    />
+                  </div>
+                  <div className="col-6 col-sm-4 col-md-2">
+                    <label className="form-label small fw-semibold text-muted mb-1">
+                      Hasta fecha
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm rounded-pill px-3"
+                      value={contactDateTo}
+                      onChange={(e) => setContactDateTo(e.target.value)}
+                      aria-label="Fecha hasta"
+                    />
+                  </div>
+                  <div className="col-12 col-md-1 d-flex justify-content-end">
+                    {(contactStatusFilter !== 'all' ||
+                      contactDateFrom ||
+                      contactDateTo ||
+                      contactSearchQuery) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary rounded-pill px-3 w-100"
+                        title="Limpiar filtros"
+                        onClick={() => {
+                          setContactStatusFilter('all');
+                          setContactDateFrom('');
+                          setContactDateTo('');
+                          setContactSearchQuery('');
+                        }}
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {filteredContacts.length === 0 ? (
+                <div
+                  className="text-center py-4 px-3 rounded-4 text-muted"
+                  style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+                >
+                  No hay consultas que coincidan con los filtros seleccionados.
+                </div>
+              ) : (
+                <div
+                  className="table-responsive rounded-4 shadow-sm"
+                  style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+                >
+                  <table className="table table-hover align-middle mb-0">
+                    <thead className="table-light">
+                      <tr style={{ fontSize: '0.8rem', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                        <th scope="col" className="py-3 px-3">Fecha</th>
+                        <th scope="col" className="py-3 px-3">Remitente</th>
+                        <th scope="col" className="py-3 px-3">Proyecto asociado</th>
+                        <th scope="col" className="py-3 px-3">Estado</th>
+                        <th scope="col" className="py-3 px-3">Mensaje</th>
+                        <th scope="col" className="py-3 px-3 text-end">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredContacts.map((c) => {
+                        const statusMeta = getContactStatusMeta(c.status || 'pending');
+                        const isUpdating = updatingContactId === c.id;
+                        return (
+                          <tr key={c.id}>
+                            <td className="px-3 small text-muted text-nowrap">
+                              {formatDate(c.created_at)}
+                            </td>
+                            <td className="px-3">
+                              <div className="fw-semibold small">{c.name}</div>
+                              <div className="small text-muted">{c.email}</div>
+                            </td>
+                            <td className="px-3" style={{ minWidth: '185px' }}>
+                              {isAdminOrOwner ? (
+                                <select
+                                  className="form-select form-select-sm rounded-pill px-3"
+                                  style={{ fontSize: '0.78rem' }}
+                                  value={c.project ?? ''}
+                                  disabled={isUpdating}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handleUpdateContact(c, {
+                                      project: val ? Number(val) : null,
+                                    });
+                                  }}
+                                  aria-label={`Proyecto asociado para consulta de ${c.name}`}
+                                >
+                                  <option value="">— Sin proyecto —</option>
+                                  {projects.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.title}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : c.project_title ? (
+                                <span className="badge rounded-pill bg-light text-dark border px-2 py-1">
+                                  {c.project_title}
+                                </span>
+                              ) : (
+                                <span className="small text-muted">Sin asociar</span>
+                              )}
+                            </td>
+                            <td className="px-3" style={{ minWidth: '155px' }}>
+                              {isAdminOrOwner ? (
+                                <select
+                                  className="form-select form-select-sm rounded-pill px-3 fw-semibold"
+                                  style={{
+                                    fontSize: '0.78rem',
+                                    backgroundColor: statusMeta.bg,
+                                    color: statusMeta.color,
+                                    borderColor: `${statusMeta.color}44`,
+                                  }}
+                                  value={c.status || 'pending'}
+                                  disabled={isUpdating}
+                                  title={statusMeta.meaning}
+                                  onChange={(e) =>
+                                    handleUpdateContact(c, { status: e.target.value })
+                                  }
+                                  aria-label={`Estado de consulta de ${c.name}`}
+                                >
+                                  {CONTACT_STATUS_OPTIONS.map((opt) => (
+                                    <option
+                                      key={opt.value}
+                                      value={opt.value}
+                                      style={{ background: '#fff', color: '#212529' }}
+                                    >
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span
+                                  className="badge rounded-pill px-3 py-1 fw-semibold"
+                                  style={{
+                                    background: statusMeta.bg,
+                                    color: statusMeta.color,
+                                    fontSize: '0.72rem',
+                                  }}
+                                  title={statusMeta.meaning}
+                                >
+                                  {statusMeta.label}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 small text-muted" style={{ maxWidth: '280px' }}>
+                              <div
+                                className="text-truncate"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setSelectedContact(c)}
+                                title={c.message}
+                              >
+                                {c.message}
+                              </div>
+                            </td>
+                            <td className="px-3 text-end text-nowrap">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-dark rounded-pill px-3 me-1"
+                                onClick={() => setSelectedContact(c)}
+                              >
+                                Ver
+                              </button>
+                              {isAdminOrOwner && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger rounded-pill px-2"
+                                  disabled={deletingContactId === c.id}
+                                  onClick={() => handleDeleteContact(c)}
+                                  title="Eliminar consulta"
+                                >
+                                  {deletingContactId === c.id ? '...' : '✕'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
 
           {selectedContact && (
@@ -1288,19 +1869,36 @@ export default function AdminDashboard() {
             >
               <div
                 className="modal-dialog modal-dialog-centered"
-                style={{ maxWidth: '560px' }}
+                style={{ maxWidth: '600px' }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="modal-content rounded-4 border-0 p-3 p-md-4">
                   <div className="modal-header border-0 pb-0">
                     <div>
-                      <span
-                        className="badge rounded-pill mb-1 px-3 py-1 fw-bold text-uppercase"
-                        style={{ background: '#e9ecef', color: '#495057', fontSize: '0.68rem' }}
-                      >
-                        CONSULTA #{selectedContact.id} · {activeProfile.name}
-                      </span>
-                      <h3 className="h5 fw-bold mb-0">Detalle de la Consulta</h3>
+                      <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                        <span
+                          className="badge rounded-pill px-3 py-1 fw-bold text-uppercase"
+                          style={{ background: '#e9ecef', color: '#495057', fontSize: '0.68rem' }}
+                        >
+                          CONSULTA #{selectedContact.id} · {activeProfile.name}
+                        </span>
+                        {(() => {
+                          const stMeta = getContactStatusMeta(selectedContact.status || 'pending');
+                          return (
+                            <span
+                              className="badge rounded-pill px-3 py-1 fw-semibold"
+                              style={{
+                                background: stMeta.bg,
+                                color: stMeta.color,
+                                fontSize: '0.7rem',
+                              }}
+                            >
+                              {stMeta.label} — {stMeta.meaning}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                      <h3 className="h5 fw-bold mb-0">Detalle y Gestión de Consulta</h3>
                     </div>
                     <button
                       type="button"
@@ -1318,8 +1916,70 @@ export default function AdminDashboard() {
                         <strong>Estudio:</strong> {activeProfile.name}
                       </div>
                       <div>
-                        <strong>Remitente:</strong> {selectedContact.name} ({selectedContact.email})
+                        <strong>Remitente:</strong> {selectedContact.name} (
+                        <a
+                          href={buildContactReplyMailto(selectedContact, activeProfile.name)}
+                          className="text-decoration-none"
+                        >
+                          {selectedContact.email}
+                        </a>
+                        )
                       </div>
+                      <div>
+                        <strong>Proyecto asociado:</strong>{' '}
+                        {selectedContact.project_title || 'Sin proyecto asociado'}
+                      </div>
+                    </div>
+
+                    {isAdminOrOwner && (
+                      <div className="row g-3 mb-3">
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label small fw-semibold mb-1">
+                            Estado de la consulta
+                          </label>
+                          <select
+                            className="form-select form-select-sm rounded-3"
+                            value={selectedContact.status || 'pending'}
+                            disabled={updatingContactId === selectedContact.id}
+                            onChange={(e) =>
+                              handleUpdateContact(selectedContact, { status: e.target.value })
+                            }
+                          >
+                            {CONTACT_STATUS_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label} ({opt.meaning})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-12 col-sm-6">
+                          <label className="form-label small fw-semibold mb-1">
+                            Asociar a un proyecto
+                          </label>
+                          <select
+                            className="form-select form-select-sm rounded-3"
+                            value={selectedContact.project ?? ''}
+                            disabled={updatingContactId === selectedContact.id}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              handleUpdateContact(selectedContact, {
+                                project: val ? Number(val) : null,
+                              });
+                            }}
+                          >
+                            <option value="">— Sin proyecto asociado —</option>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="small fw-semibold text-muted mb-1 text-uppercase" style={{ letterSpacing: '0.05em' }}>
+                      Mensaje del Interesado:
                     </div>
                     <div
                       className="p-3 rounded-3"
@@ -1329,14 +1989,20 @@ export default function AdminDashboard() {
                         whiteSpace: 'pre-wrap',
                         fontSize: '0.88rem',
                         lineHeight: 1.6,
-                        maxHeight: '260px',
+                        maxHeight: '240px',
                         overflowY: 'auto',
                       }}
                     >
                       {selectedContact.message}
                     </div>
                   </div>
-                  <div className="modal-footer border-0 pt-0 justify-content-end">
+                  <div className="modal-footer border-0 pt-0 justify-content-between">
+                    <a
+                      href={buildContactReplyMailto(selectedContact, activeProfile.name)}
+                      className="btn btn-outline-dark btn-sm rounded-pill px-3 fw-semibold"
+                    >
+                      Responder por Email
+                    </a>
                     <button
                       type="button"
                       className="btn btn-dark rounded-pill px-4 fw-semibold"

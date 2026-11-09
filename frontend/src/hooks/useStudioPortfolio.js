@@ -3,7 +3,6 @@ import {
   getProfileBySlug,
   getProfiles,
   getProjects,
-  getBrands,
   getAbout,
   getTeam,
 } from '../services/api';
@@ -19,7 +18,7 @@ function errorMessage(reason, fallback) {
 
 /**
  * Hook que centraliza la resolución del estudio activo (por `slug` o estudio principal/propio)
- * y la carga aislada de todos sus recursos públicos (`projects`, `about`, `team`, `brands`).
+ * y la carga aislada de todos sus recursos públicos (`projects`, `about`, `team`).
  *
  * Reglas de visibilidad multiestudio:
  * - Visitante anónimo o VIEWER: solo ve el estudio correspondiente al link que abrió (`/estudios/:slug` o el principal en `/`). Nunca recibe ni ve el listado de otros estudios.
@@ -38,12 +37,10 @@ export default function useStudioPortfolio(slug, user) {
     ownStudio: null,
     availableStudios: [],
     projects: [],
-    brands: [],
     aboutData: null,
     teamMembers: [],
     profileError: null,
     projectsError: null,
-    brandsError: null,
     aboutError: null,
     teamError: null,
     resolvedKey: null,
@@ -59,7 +56,6 @@ export default function useStudioPortfolio(slug, user) {
       notFound: false,
       profileError: null,
       projectsError: null,
-      brandsError: null,
       aboutError: null,
       teamError: null,
     }));
@@ -71,9 +67,8 @@ export default function useStudioPortfolio(slug, user) {
     async function fetchStudioResources(resolvedProfile, studiosList = []) {
       const studioParams = { profile_slug: resolvedProfile.slug };
 
-      const [projectsRes, brandsRes, aboutRes, teamRes] = await Promise.allSettled([
+      const [projectsRes, aboutRes, teamRes] = await Promise.allSettled([
         getProjects(studioParams),
-        getBrands(studioParams),
         getAbout(studioParams),
         getTeam(studioParams),
       ]);
@@ -85,13 +80,6 @@ export default function useStudioPortfolio(slug, user) {
       const nextProjectsError =
         projectsRes.status === 'rejected'
           ? errorMessage(projectsRes.reason, 'Error al cargar proyectos del estudio.')
-          : null;
-
-      const nextBrands =
-        brandsRes.status === 'fulfilled' ? toList(brandsRes.value.data) : [];
-      const nextBrandsError =
-        brandsRes.status === 'rejected'
-          ? errorMessage(brandsRes.reason, 'Error al cargar marcas asociadas.')
           : null;
 
       const nextAboutList =
@@ -116,12 +104,10 @@ export default function useStudioPortfolio(slug, user) {
         ownStudio: isStudioMember ? resolvedProfile : null,
         availableStudios: isAdmin ? studiosList : [],
         projects: nextProjects,
-        brands: nextBrands,
         aboutData: nextAboutData,
         teamMembers: nextTeam,
         profileError: null,
         projectsError: nextProjectsError,
-        brandsError: nextBrandsError,
         aboutError: nextAboutError,
         teamError: nextTeamError,
         resolvedKey: currentKey,
@@ -157,7 +143,6 @@ export default function useStudioPortfolio(slug, user) {
             ownStudio: isStudioMember ? studiosList[0] || null : null,
             availableStudios: isAdmin ? studiosList : [],
             projects: [],
-            brands: [],
             aboutData: null,
             teamMembers: [],
             profileError: is404
@@ -167,7 +152,6 @@ export default function useStudioPortfolio(slug, user) {
                   'No se pudo cargar la información del estudio.'
                 ),
             projectsError: null,
-            brandsError: null,
             aboutError: null,
             teamError: null,
             resolvedKey: currentKey,
@@ -199,12 +183,10 @@ export default function useStudioPortfolio(slug, user) {
             ownStudio: null,
             availableStudios: [],
             projects: [],
-            brands: [],
             aboutData: null,
             teamMembers: [],
             profileError: null,
             projectsError: null,
-            brandsError: null,
             aboutError: null,
             teamError: null,
             resolvedKey: currentKey,
@@ -222,12 +204,10 @@ export default function useStudioPortfolio(slug, user) {
           ownStudio: null,
           availableStudios: [],
           projects: [],
-          brands: [],
           aboutData: null,
           teamMembers: [],
           profileError: errorMessage(err, 'No se pudo conectar con el servidor.'),
           projectsError: null,
-          brandsError: null,
           aboutError: null,
           teamError: null,
           resolvedKey: currentKey,

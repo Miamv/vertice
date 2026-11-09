@@ -245,6 +245,7 @@ export default function QuoteRequest() {
 
       const payload = {
         profile: Number(formData.profile),
+        project: referencedProject ? Number(referencedProject.id) : null,
         name: formData.name.trim(),
         email: formData.email.trim(),
         message: compiledMessage,

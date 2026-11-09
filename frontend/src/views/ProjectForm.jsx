@@ -5,7 +5,6 @@ import {
   createProject,
   updateProject,
   getProfiles,
-  getBrands,
   getMedia,
   createMedia,
   updateMedia,
@@ -28,11 +27,36 @@ const CATEGORIES = [
 const MEDIA_TYPES = [
   { value: 'render', label: 'Render' },
   { value: 'image', label: 'Imagen / Plano' },
-  { value: 'video', label: 'Video' },
-  { value: 'virtual_tour', label: 'Recorrido Virtual' },
-  { value: 'model_3d', label: 'Modelo 3D' },
-  { value: 'interactive', label: 'Interactivo' },
 ];
+
+const MAX_MEDIA_SIZE = 10 * 1024 * 1024;
+const MEDIA_MIME_TYPES = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+};
+
+function validateMediaFile(file) {
+  if (file.size > MAX_MEDIA_SIZE) {
+    return 'El archivo no puede superar los 10 MiB.';
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  const expectedMimeType = MEDIA_MIME_TYPES[extension];
+  if (!expectedMimeType) {
+    return 'Formato no permitido. Subí una imagen compatible.';
+  }
+  if (file.type && file.type !== expectedMimeType) {
+    return 'El tipo de archivo no coincide con su extensión.';
+  }
+
+  return null;
+}
 
 const ZONE_OPTIONS = [
   { value: '', label: 'Sin zona' },
@@ -66,12 +90,13 @@ export default function ProjectForm() {
     title: '',
     description: '',
     category: 'architecture',
+    order: 1,
+    location: '',
+    google_earth_url: '',
     profile: activeStudio?.id || '',
-    brand_ids: [],
   });
 
   const [profiles, setProfiles] = useState([]);
-  const [allBrands, setAllBrands] = useState([]);
   const [existingMedia, setExistingMedia] = useState([]);
   const [pendingMedia, setPendingMedia] = useState([]);
 
@@ -106,9 +131,8 @@ export default function ProjectForm() {
       setLoading(true);
       setError(null);
       try {
-        const [profilesRes, brandsRes, projectRes] = await Promise.all([
+        const [profilesRes, projectRes] = await Promise.all([
           getProfiles(!isAdmin ? { mine: 1 } : undefined),
-          getBrands(),
           isEditing ? getProject(id) : Promise.resolve(null),
         ]);
 
@@ -119,22 +143,16 @@ export default function ProjectForm() {
           : (profilesRes.data?.results ?? []);
         setProfiles(profilesData);
 
-        const brandsData = Array.isArray(brandsRes.data)
-          ? brandsRes.data
-          : (brandsRes.data?.results ?? []);
-        setAllBrands(brandsData);
-
         if (isEditing && projectRes) {
           const p = projectRes.data;
-          const currentBrandIds = Array.isArray(p.brands)
-            ? p.brands.map((b) => b.id)
-            : [];
           setFormData({
             title: p.title || '',
             description: p.description || '',
             category: p.category || 'architecture',
+            order: p.order ?? 1,
+            location: p.location || '',
+            google_earth_url: p.google_earth_url || '',
             profile: p.profile || activeStudio?.id || (profilesData[0]?.id ?? ''),
-            brand_ids: currentBrandIds,
           });
 
           let mediaItems = Array.isArray(p.media) ? p.media : null;
@@ -199,22 +217,12 @@ export default function ProjectForm() {
     }
   }
 
-  function handleToggleBrand(brandId) {
-    setFormData((prev) => {
-      const exists = prev.brand_ids.includes(brandId);
-      const next = exists
-        ? prev.brand_ids.filter((bId) => bId !== brandId)
-        : [...prev.brand_ids, brandId];
-      return { ...prev, brand_ids: next };
-    });
-  }
-
   function handleDraftFileChange(e) {
     const file = e.target.files?.[0] || null;
     if (draftMedia.previewUrl) {
       URL.revokeObjectURL(draftMedia.previewUrl);
     }
-    const previewUrl = file && file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+    const previewUrl = file ? URL.createObjectURL(file) : null;
     setDraftMedia((prev) => ({
       ...prev,
       file,
@@ -239,6 +247,12 @@ export default function ProjectForm() {
         type: 'warning',
         message: 'Seleccioná un archivo antes de agregarlo a la lista del proyecto.',
       });
+      return;
+    }
+
+    const fileError = validateMediaFile(draftMedia.file);
+    if (fileError) {
+      setMediaFeedback({ type: 'warning', message: fileError });
       return;
     }
 
@@ -378,6 +392,15 @@ export default function ProjectForm() {
       });
     }
 
+    const invalidUpload = queue.find((item) => validateMediaFile(item.file));
+    if (invalidUpload) {
+      setMediaFeedback({
+        type: 'danger',
+        message: validateMediaFile(invalidUpload.file),
+      });
+      return;
+    }
+
     if (isCollaborator && isEditing) {
       setSubmitting(true);
       try {
@@ -413,8 +436,10 @@ export default function ProjectForm() {
       title: formData.title.trim(),
       description: formData.description.trim(),
       category: formData.category,
+      order: Math.max(1, parseInt(formData.order, 10) || 1),
+      location: formData.location.trim(),
+      google_earth_url: formData.google_earth_url.trim(),
       profile: Number(formData.profile),
-      brand_ids: formData.brand_ids,
     };
 
     try {
@@ -537,7 +562,7 @@ export default function ProjectForm() {
             </div>
 
             <div className="row g-3 mb-3">
-              <div className="col-md-6">
+              <div className="col-md-5">
                 <label htmlFor="category" className="form-label small fw-semibold">
                   Categoría <span className="text-danger">*</span>
                 </label>
@@ -565,7 +590,7 @@ export default function ProjectForm() {
                 )}
               </div>
 
-              <div className="col-md-6">
+              <div className="col-md-5">
                 <label htmlFor="profile" className="form-label small fw-semibold">
                   Estudio Profesional <span className="text-danger">*</span>
                 </label>
@@ -596,6 +621,33 @@ export default function ProjectForm() {
                   </div>
                 )}
               </div>
+
+              <div className="col-md-2">
+                <label htmlFor="order" className="form-label small fw-semibold">
+                  Orden Visual
+                </label>
+                <input
+                  type="number"
+                  id="order"
+                  name="order"
+                  min="1"
+                  className={`form-control rounded-3 ${fieldErrors.order ? 'is-invalid' : ''}`}
+                  value={formData.order}
+                  onChange={handleChange}
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.order ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.order)
+                      ? fieldErrors.order.join(' ')
+                      : fieldErrors.order}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.7rem' }}>
+                    1 = 1°, 2 = 2°...
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mb-3">
@@ -622,32 +674,61 @@ export default function ProjectForm() {
               )}
             </div>
 
-            {isAdminOrOwner && allBrands.length > 0 && (
-              <div className="mb-4">
-                <label className="form-label small fw-semibold d-block mb-2">
-                  Marcas y Proveedores Asociados (Opcional)
+            <div className="row g-3 mb-3">
+              <div className="col-md-5">
+                <label htmlFor="location" className="form-label small fw-semibold">
+                  Ubicación de la Obra (Opcional)
                 </label>
-                <div className="d-flex flex-wrap gap-2">
-                  {allBrands.map((brand) => {
-                    const selected = formData.brand_ids.includes(brand.id);
-                    return (
-                      <button
-                        key={brand.id}
-                        type="button"
-                        onClick={() => handleToggleBrand(brand.id)}
-                        disabled={submitting}
-                        className={`btn btn-sm rounded-pill px-3 ${
-                          selected ? 'btn-dark' : 'btn-outline-secondary'
-                        }`}
-                      >
-                        {selected ? '✓ ' : '+ '}
-                        {brand.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                <input
+                  type="text"
+                  id="location"
+                  name="location"
+                  className={`form-control rounded-3 ${fieldErrors.location ? 'is-invalid' : ''}`}
+                  value={formData.location}
+                  onChange={handleChange}
+                  placeholder="Ej. Chacras de Coria, Mendoza"
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.location ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.location)
+                      ? fieldErrors.location.join(' ')
+                      : fieldErrors.location}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.73rem' }}>
+                    Texto visible en la pestaña Ubicación del visor.
+                  </div>
+                )}
               </div>
-            )}
+
+              <div className="col-md-7">
+                <label htmlFor="google_earth_url" className="form-label small fw-semibold">
+                  Enlace de Ubicación — Google Maps / Earth (Opcional)
+                </label>
+                <input
+                  type="url"
+                  id="google_earth_url"
+                  name="google_earth_url"
+                  className={`form-control rounded-3 ${fieldErrors.google_earth_url ? 'is-invalid' : ''}`}
+                  value={formData.google_earth_url}
+                  onChange={handleChange}
+                  placeholder="https://maps.google.com/... o https://earth.google.com/..."
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.google_earth_url ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.google_earth_url)
+                      ? fieldErrors.google_earth_url.join(' ')
+                      : fieldErrors.google_earth_url}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.73rem' }}>
+                    Enlace que abrirá el botón &ldquo;Ver ubicación&rdquo; del proyecto.
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="mt-4 pt-4 border-top">
               <div className="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -693,7 +774,7 @@ export default function ProjectForm() {
                       ref={fileInputRef}
                       id="mediaFileInput"
                       type="file"
-                      accept="image/*,video/*"
+                      accept=".jpg,.jpeg,.png,.webp,.avif,.gif,.svg,.bmp,image/jpeg,image/png,image/webp,image/avif,image/gif,image/svg+xml,image/bmp"
                       className="form-control form-control-sm rounded-3"
                       onChange={handleDraftFileChange}
                       disabled={submitting}
@@ -722,7 +803,7 @@ export default function ProjectForm() {
 
                   <div className="col-6 col-md-4">
                     <label htmlFor="draftPlanType" className="form-label small fw-semibold mb-1">
-                      Categoría de Plano (<code>plan_type</code>)
+                      Categoría de Plano
                     </label>
                     <select
                       id="draftPlanType"
@@ -761,7 +842,7 @@ export default function ProjectForm() {
                   </div>
 
                   <div className="col-6 col-md-8 d-flex justify-content-end align-items-center gap-2">
-                    {draftMedia.previewUrl && (
+                    {draftMedia.previewUrl && draftMedia.file?.type.startsWith('image/') && (
                       <img
                         src={draftMedia.previewUrl}
                         alt="Vista previa"
@@ -793,7 +874,7 @@ export default function ProjectForm() {
                         className="d-flex align-items-center justify-content-between gap-2 p-2 rounded-3 border bg-white flex-wrap"
                       >
                         <div className="d-flex align-items-center gap-2" style={{ minWidth: '180px' }}>
-                          {item.previewUrl ? (
+                          {item.previewUrl && item.file.type.startsWith('image/') ? (
                             <img
                               src={item.previewUrl}
                               alt={item.file.name}

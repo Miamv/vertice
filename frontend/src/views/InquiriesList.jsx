@@ -1,8 +1,94 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getContacts, deleteContact } from '../services/api';
+import { getContacts, updateContact, deleteContact, getProjects } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+
+const CONTACT_STATUS_OPTIONS = [
+  {
+    value: 'pending',
+    label: 'Pendiente',
+    meaning: 'Consulta recibida',
+    bg: '#fff3bf',
+    color: '#8f5b00',
+  },
+  {
+    value: 'in_review',
+    label: 'En revisión',
+    meaning: 'El estudio está evaluándola',
+    bg: '#d0ebff',
+    color: '#1864ab',
+  },
+  {
+    value: 'responded',
+    label: 'Respondida',
+    meaning: 'Ya se respondió',
+    bg: '#d3f9d8',
+    color: '#2b8a3e',
+  },
+  {
+    value: 'closed',
+    label: 'Cerrada',
+    meaning: 'La gestión terminó',
+    bg: '#e9ecef',
+    color: '#495057',
+  },
+];
+
+function getContactStatusMeta(status) {
+  return (
+    CONTACT_STATUS_OPTIONS.find((opt) => opt.value === status) || CONTACT_STATUS_OPTIONS[0]
+  );
+}
+
+function toLocalDateInputValue(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return String(iso).slice(0, 10);
+  }
+}
+
+function buildContactReplyMailto(contact, fallbackStudioName = 'Vértice') {
+  if (!contact?.email) return '#';
+  const rawStudio = (contact.profile_name || fallbackStudioName || 'Vértice').trim();
+  const shortStudio = rawStudio.replace(/^Estudio\s+/i, '').trim() || rawStudio;
+  const signatureStudio = /^Estudio\s+/i.test(rawStudio)
+    ? rawStudio
+    : `Estudio ${rawStudio}`;
+
+  const recipientName = (contact.name || '').trim() || 'Interesado/a';
+
+  let topicClause = '';
+  const serviceMatch = String(contact.message || '').match(
+    /\[Servicio requerido\]:\s*([^\n\r]+)/i
+  );
+  if (contact.project_title) {
+    topicClause = ` sobre el proyecto "${contact.project_title}"`;
+  } else if (serviceMatch && serviceMatch[1]?.trim()) {
+    topicClause = ` sobre ${serviceMatch[1].trim().toLowerCase()}`;
+  }
+
+  const subject = `Respuesta a tu consulta — ${shortStudio}`;
+  const body = [
+    `Hola, ${recipientName}:`,
+    '',
+    `Gracias por comunicarte con nuestro estudio. Hemos recibido tu consulta${topicClause} y nos gustaría brindarte más información.`,
+    '',
+    'Saludos,',
+    signatureStudio,
+  ].join('\r\n');
+
+  return `mailto:${contact.email.trim()}?subject=${encodeURIComponent(
+    subject
+  )}&body=${encodeURIComponent(body)}`;
+}
 
 function formatDate(iso) {
   if (!iso) return 'Reciente';
@@ -32,12 +118,17 @@ export default function InquiriesList() {
   const isStaffMember = role === 'admin' || role === 'owner' || role === 'collaborator';
 
   const [contacts, setContacts] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(isStaffMember);
   const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const activeProfileId = activeProfile?.id ?? null;
@@ -50,22 +141,45 @@ export default function InquiriesList() {
   if (prevProfileId !== activeProfileId) {
     setPrevProfileId(activeProfileId);
     setContacts([]);
+    setProjects([]);
     setLoading(isStaffMember);
     setError(null);
     setSelectedMessage(null);
+    setStatusFilter('all');
+    setDateFrom('');
+    setDateTo('');
   }
 
   useEffect(() => {
     if (initializingStudio || !isStaffMember) return;
     let cancelled = false;
 
-    async function loadContacts() {
+    async function loadData() {
       try {
         const params = activeProfileId ? { profile: activeProfileId } : undefined;
-        const res = await getContacts(params);
+        const [contactsRes, projectsRes] = await Promise.allSettled([
+          getContacts(params),
+          getProjects(params),
+        ]);
         if (cancelled) return;
-        const data = Array.isArray(res.data) ? res.data : (res.data?.results ?? []);
-        setContacts(data);
+
+        if (contactsRes.status === 'fulfilled') {
+          const data = Array.isArray(contactsRes.value.data)
+            ? contactsRes.value.data
+            : (contactsRes.value.data?.results ?? []);
+          setContacts(data);
+        } else {
+          throw contactsRes.reason;
+        }
+
+        if (projectsRes.status === 'fulfilled') {
+          const pData = Array.isArray(projectsRes.value.data)
+            ? projectsRes.value.data
+            : (projectsRes.value.data?.results ?? []);
+          setProjects(pData);
+        } else {
+          setProjects([]);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(
@@ -81,7 +195,7 @@ export default function InquiriesList() {
       }
     }
 
-    loadContacts();
+    loadData();
 
     return () => {
       cancelled = true;
@@ -92,6 +206,33 @@ export default function InquiriesList() {
     setLoading(true);
     setError(null);
     setReloadKey((k) => k + 1);
+  }
+
+  async function handleUpdateContact(contact, updates) {
+    if (!isAdminOrOwner) return;
+    setUpdatingId(contact.id);
+    setFeedback(null);
+    try {
+      const res = await updateContact(contact.id, updates);
+      const updated = res.data;
+      setContacts((prev) => prev.map((c) => (c.id === contact.id ? updated : c)));
+      setSelectedMessage((prev) => (prev && prev.id === contact.id ? updated : prev));
+      setFeedback({
+        type: 'success',
+        message: `Consulta #${contact.id} actualizada correctamente.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: 'danger',
+        message:
+          err?.response?.data?.project?.[0] ||
+          err?.response?.data?.status?.[0] ||
+          err?.response?.data?.detail ||
+          'No se pudo actualizar la solicitud.',
+      });
+    } finally {
+      setUpdatingId(null);
+    }
   }
 
   async function handleDelete(contact) {
@@ -126,16 +267,39 @@ export default function InquiriesList() {
   }
 
   const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(
-      (c) =>
-        (c.name && c.name.toLowerCase().includes(q)) ||
-        (c.email && c.email.toLowerCase().includes(q)) ||
-        (c.profile_name && c.profile_name.toLowerCase().includes(q)) ||
-        (c.message && c.message.toLowerCase().includes(q))
-    );
-  }, [contacts, searchQuery]);
+    const normalize = (val) =>
+      String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const q = normalize(searchQuery);
+
+    return contacts.filter((c) => {
+      const statusVal = c.status || 'pending';
+      if (statusFilter !== 'all' && statusVal !== statusFilter) {
+        return false;
+      }
+
+      if (dateFrom || dateTo) {
+        const itemDate = toLocalDateInputValue(c.created_at);
+        if (dateFrom && itemDate && itemDate < dateFrom) return false;
+        if (dateTo && itemDate && itemDate > dateTo) return false;
+      }
+
+      if (!q) return true;
+      const statusMeta = getContactStatusMeta(statusVal);
+      return (
+        normalize(c.name).includes(q) ||
+        normalize(c.email).includes(q) ||
+        normalize(c.profile_name).includes(q) ||
+        normalize(c.project_title).includes(q) ||
+        normalize(statusMeta.label).includes(q) ||
+        normalize(c.message).includes(q)
+      );
+    });
+  }, [contacts, searchQuery, statusFilter, dateFrom, dateTo]);
 
   if (initializingStudio || loading) {
     return (
@@ -220,15 +384,79 @@ export default function InquiriesList() {
         <>
           {/* Barra de Filtro */}
           {contacts.length > 0 && (
-            <div className="mb-4">
-              <input
-                type="text"
-                className="form-control rounded-pill px-4 py-2"
-                style={{ maxWidth: '380px' }}
-                placeholder="Buscar por nombre, correo o contenido..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            <div
+              className="p-3 rounded-4 mb-4 shadow-sm"
+              style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+            >
+              <div className="row g-2 align-items-end">
+                <div className="col-12 col-md-4">
+                  <label className="form-label small fw-semibold text-muted mb-1">
+                    Buscar solicitud
+                  </label>
+                  <input
+                    type="text"
+                    className="form-control form-control-sm rounded-pill px-3"
+                    placeholder="Remitente, correo, proyecto o mensaje..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="col-12 col-sm-4 col-md-3">
+                  <label className="form-label small fw-semibold text-muted mb-1">
+                    Estado
+                  </label>
+                  <select
+                    className="form-select form-select-sm rounded-pill px-3"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="all">Todos los estados</option>
+                    {CONTACT_STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label} — {opt.meaning}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-6 col-sm-4 col-md-2">
+                  <label className="form-label small fw-semibold text-muted mb-1">
+                    Desde fecha
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm rounded-pill px-3"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                </div>
+                <div className="col-6 col-sm-4 col-md-2">
+                  <label className="form-label small fw-semibold text-muted mb-1">
+                    Hasta fecha
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm rounded-pill px-3"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                </div>
+                <div className="col-12 col-md-1 d-flex justify-content-end">
+                  {(statusFilter !== 'all' || dateFrom || dateTo || searchQuery) && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary rounded-pill px-3 w-100"
+                      onClick={() => {
+                        setStatusFilter('all');
+                        setDateFrom('');
+                        setDateTo('');
+                        setSearchQuery('');
+                      }}
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -285,7 +513,7 @@ export default function InquiriesList() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="p-4 text-center text-muted">
-              No se encontraron solicitudes que coincidan con &quot;{searchQuery}&quot;.
+              No se encontraron solicitudes que coincidan con los filtros seleccionados.
             </div>
           ) : (
             <div
@@ -298,69 +526,132 @@ export default function InquiriesList() {
                     <th scope="col" className="py-3 px-3">Fecha</th>
                     <th scope="col" className="py-3 px-3">Estudio</th>
                     <th scope="col" className="py-3 px-3">Remitente</th>
+                    <th scope="col" className="py-3 px-3">Proyecto asociado</th>
                     <th scope="col" className="py-3 px-3">Mensaje</th>
                     <th scope="col" className="py-3 px-3 text-center">Estado</th>
                     <th scope="col" className="py-3 px-3 text-end">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-3 small text-muted text-nowrap">
-                        {formatDate(c.created_at)}
-                      </td>
-                      <td className="px-3 fw-semibold small text-nowrap">
-                        {c.profile_name || activeProfile?.name || `Perfil #${c.profile}`}
-                      </td>
-                      <td className="px-3">
-                        <div className="fw-semibold small">{c.name}</div>
-                        <div className="small text-muted">{c.email}</div>
-                      </td>
-                      <td className="px-3 small text-muted" style={{ maxWidth: '300px' }}>
-                        <div
-                          className="text-truncate"
-                          title={c.message}
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setSelectedMessage(c)}
-                        >
-                          {c.message}
-                        </div>
-                      </td>
-                      <td className="px-3 text-center">
-                        <span
-                          className="badge rounded-pill px-2 py-1"
-                          style={{
-                            background: '#d3f9d8',
-                            color: '#2b8a3e',
-                            fontSize: '0.68rem',
-                            letterSpacing: '0.04em',
-                          }}
-                        >
-                          {isStaffMember ? 'RECIBIDA' : 'ENVIADA'}
-                        </span>
-                      </td>
-                      <td className="px-3 text-end text-nowrap">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-dark rounded-pill px-3 me-1"
-                          onClick={() => setSelectedMessage(c)}
-                        >
-                          Ver
-                        </button>
-                        {isAdminOrOwner && (
+                  {filtered.map((c) => {
+                    const statusMeta = getContactStatusMeta(c.status || 'pending');
+                    const isUpdating = updatingId === c.id;
+                    return (
+                      <tr key={c.id}>
+                        <td className="px-3 small text-muted text-nowrap">
+                          {formatDate(c.created_at)}
+                        </td>
+                        <td className="px-3 fw-semibold small text-nowrap">
+                          {c.profile_name || activeProfile?.name || `Perfil #${c.profile}`}
+                        </td>
+                        <td className="px-3">
+                          <div className="fw-semibold small">{c.name}</div>
+                          <div className="small text-muted">{c.email}</div>
+                        </td>
+                        <td className="px-3" style={{ minWidth: '175px' }}>
+                          {isAdminOrOwner ? (
+                            <select
+                              className="form-select form-select-sm rounded-pill px-3"
+                              style={{ fontSize: '0.78rem' }}
+                              value={c.project ?? ''}
+                              disabled={isUpdating}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleUpdateContact(c, {
+                                  project: val ? Number(val) : null,
+                                });
+                              }}
+                            >
+                              <option value="">— Sin proyecto —</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.title}
+                                </option>
+                              ))}
+                            </select>
+                          ) : c.project_title ? (
+                            <span className="badge rounded-pill bg-light text-dark border px-2 py-1">
+                              {c.project_title}
+                            </span>
+                          ) : (
+                            <span className="small text-muted">Sin asociar</span>
+                          )}
+                        </td>
+                        <td className="px-3 small text-muted" style={{ maxWidth: '260px' }}>
+                          <div
+                            className="text-truncate"
+                            title={c.message}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => setSelectedMessage(c)}
+                          >
+                            {c.message}
+                          </div>
+                        </td>
+                        <td className="px-3 text-center" style={{ minWidth: '150px' }}>
+                          {isAdminOrOwner ? (
+                            <select
+                              className="form-select form-select-sm rounded-pill px-3 fw-semibold"
+                              style={{
+                                fontSize: '0.76rem',
+                                backgroundColor: statusMeta.bg,
+                                color: statusMeta.color,
+                                borderColor: `${statusMeta.color}44`,
+                              }}
+                              value={c.status || 'pending'}
+                              disabled={isUpdating}
+                              title={statusMeta.meaning}
+                              onChange={(e) =>
+                                handleUpdateContact(c, { status: e.target.value })
+                              }
+                            >
+                              {CONTACT_STATUS_OPTIONS.map((opt) => (
+                                <option
+                                  key={opt.value}
+                                  value={opt.value}
+                                  style={{ background: '#fff', color: '#212529' }}
+                                >
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span
+                              className="badge rounded-pill px-2 py-1"
+                              style={{
+                                background: statusMeta.bg,
+                                color: statusMeta.color,
+                                fontSize: '0.7rem',
+                                letterSpacing: '0.04em',
+                              }}
+                              title={statusMeta.meaning}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 text-end text-nowrap">
                           <button
                             type="button"
-                            className="btn btn-sm btn-outline-danger rounded-pill px-2"
-                            disabled={deletingId === c.id}
-                            onClick={() => handleDelete(c)}
-                            title="Eliminar solicitud"
+                            className="btn btn-sm btn-outline-dark rounded-pill px-3 me-1"
+                            onClick={() => setSelectedMessage(c)}
                           >
-                            {deletingId === c.id ? '...' : '✕'}
+                            Ver
                           </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          {isAdminOrOwner && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger rounded-pill px-2"
+                              disabled={deletingId === c.id}
+                              onClick={() => handleDelete(c)}
+                              title="Eliminar solicitud"
+                            >
+                              {deletingId === c.id ? '...' : '✕'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -378,18 +669,35 @@ export default function InquiriesList() {
         >
           <div
             className="modal-dialog modal-dialog-centered"
-            style={{ maxWidth: '560px' }}
+            style={{ maxWidth: '580px' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-content rounded-4 border-0 p-3 p-md-4">
               <div className="modal-header border-0 pb-0">
                 <div>
-                  <span
-                    className="badge rounded-pill mb-1 px-3 py-1 fw-bold text-uppercase"
-                    style={{ background: '#e9ecef', color: '#495057', fontSize: '0.68rem' }}
-                  >
-                    SOLICITUD #{selectedMessage.id}
-                  </span>
+                  <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                    <span
+                      className="badge rounded-pill px-3 py-1 fw-bold text-uppercase"
+                      style={{ background: '#e9ecef', color: '#495057', fontSize: '0.68rem' }}
+                    >
+                      SOLICITUD #{selectedMessage.id}
+                    </span>
+                    {(() => {
+                      const stMeta = getContactStatusMeta(selectedMessage.status || 'pending');
+                      return (
+                        <span
+                          className="badge rounded-pill px-3 py-1 fw-semibold"
+                          style={{
+                            background: stMeta.bg,
+                            color: stMeta.color,
+                            fontSize: '0.7rem',
+                          }}
+                        >
+                          {stMeta.label} — {stMeta.meaning}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <h3 className="h5 fw-bold mb-0" style={{ color: 'var(--color-ink)' }}>
                     Detalle de la Solicitud
                   </h3>
@@ -411,9 +719,67 @@ export default function InquiriesList() {
                     <strong>Estudio:</strong> {selectedMessage.profile_name || activeProfile?.name || `#${selectedMessage.profile}`}
                   </div>
                   <div>
-                    <strong>Remitente:</strong> {selectedMessage.name} ({selectedMessage.email})
+                    <strong>Remitente:</strong> {selectedMessage.name} (
+                    <a
+                      href={buildContactReplyMailto(selectedMessage, activeProfile?.name)}
+                      className="text-decoration-none"
+                    >
+                      {selectedMessage.email}
+                    </a>
+                    )
+                  </div>
+                  <div>
+                    <strong>Proyecto asociado:</strong>{' '}
+                    {selectedMessage.project_title || 'Sin proyecto asociado'}
                   </div>
                 </div>
+
+                {isAdminOrOwner && (
+                  <div className="row g-3 mb-3">
+                    <div className="col-12 col-sm-6">
+                      <label className="form-label small fw-semibold mb-1">
+                        Estado de la consulta
+                      </label>
+                      <select
+                        className="form-select form-select-sm rounded-3"
+                        value={selectedMessage.status || 'pending'}
+                        disabled={updatingId === selectedMessage.id}
+                        onChange={(e) =>
+                          handleUpdateContact(selectedMessage, { status: e.target.value })
+                        }
+                      >
+                        {CONTACT_STATUS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label} ({opt.meaning})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-12 col-sm-6">
+                      <label className="form-label small fw-semibold mb-1">
+                        Asociar a un proyecto
+                      </label>
+                      <select
+                        className="form-select form-select-sm rounded-3"
+                        value={selectedMessage.project ?? ''}
+                        disabled={updatingId === selectedMessage.id}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          handleUpdateContact(selectedMessage, {
+                            project: val ? Number(val) : null,
+                          });
+                        }}
+                      >
+                        <option value="">— Sin proyecto asociado —</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
 
                 <div className="small fw-semibold text-muted mb-1 text-uppercase" style={{ letterSpacing: '0.05em' }}>
                   Contenido del Encargo / Mensaje:
@@ -435,7 +801,13 @@ export default function InquiriesList() {
                 </div>
               </div>
 
-              <div className="modal-footer border-0 pt-0 justify-content-end">
+              <div className="modal-footer border-0 pt-0 justify-content-between">
+                <a
+                  href={buildContactReplyMailto(selectedMessage, activeProfile?.name)}
+                  className="btn btn-outline-dark btn-sm rounded-pill px-3 fw-semibold"
+                >
+                  Responder por Email
+                </a>
                 <button
                   type="button"
                   className="btn btn-dark rounded-pill px-4 fw-semibold"

@@ -1,10 +1,9 @@
 import { useEffect, useMemo } from 'react';
-import { Link, useLocation, useOutletContext, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import Hero from '../components/Hero';
 import About from '../components/About';
 import Team from '../components/Team';
-import BrandsCarousel from '../components/BrandsCarousel';
-import ProjectCards from '../components/ProjectCards';
+import ProjectSlider from '../components/ProjectSlider';
 import ContactSection from '../components/ContactSection';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +12,7 @@ import useStudioPortfolio from '../hooks/useStudioPortfolio';
 export default function Home() {
   const { slug } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const outletContext = useOutletContext();
   const setStudioContext = outletContext?.setStudioContext;
   const { user } = useAuth();
@@ -27,12 +27,10 @@ export default function Home() {
     ownStudio,
     availableStudios,
     projects,
-    brands,
     aboutData,
     teamMembers,
     profileError,
     projectsError,
-    brandsError,
     aboutError,
     teamError,
     reload,
@@ -74,19 +72,60 @@ export default function Home() {
     }
   }, [profile, notFound]);
 
-  // Desplazamiento suave si la URL incluye un hash (#nosotros, #proyectos, #contacto, etc.)
+  // Al cargar o recargar la portada, asegura iniciar al principio de la página (Hero)
+  // salvo cuando se navega explícitamente desde otra vista hacia una sección puntual.
   useEffect(() => {
-    if (loading || !location.hash) return;
-    const targetId = location.hash.replace(/^#/, '');
-    if (!targetId) return;
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+    if (!location.state?.scrollToSection) {
+      if (location.hash) {
+        navigate(location.pathname, { replace: true });
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, loading]);
+
+  // Si se navegó desde otra ruta hacia una sección específica, desplaza suavemente al terminar de cargar
+  useEffect(() => {
+    const targetId = location.state?.scrollToSection;
+    if (loading || !targetId) return;
     const timer = setTimeout(() => {
       const el = document.getElementById(targetId);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth' });
       }
+      navigate(location.pathname, { replace: true, state: {} });
     }, 80);
     return () => clearTimeout(timer);
-  }, [loading, location.hash, profile?.slug]);
+  }, [loading, location.state?.scrollToSection, location.pathname, navigate]);
+
+  // Efecto de aparición progresiva al desplazarse hacia abajo por las secciones de la Home
+  useEffect(() => {
+    if (loading || !profile) return;
+    const elements = document.querySelectorAll('[data-scroll-reveal]');
+    if (!elements.length) return;
+
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+      elements.forEach((el) => el.classList.add('is-revealed'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-revealed');
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -48px 0px' }
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [loading, profile, projects.length, teamMembers.length]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -203,20 +242,28 @@ export default function Home() {
   return (
     <>
       <Hero profile={profile} />
-      <About data={aboutData} profile={profile} error={aboutError} />
-      <Team members={teamMembers} error={teamError} />
-      <BrandsCarousel brands={brands} error={brandsError} />
-      <ProjectCards
-        projects={projects}
-        error={projectsError}
-        onRetry={reload}
-        studioSlug={profile.slug}
-      />
-      <ContactSection
-        title="Contanos tu proyecto"
-        profile={profile}
-        profileId={profile.id}
-      />
+      <div className="vertice-reveal" data-scroll-reveal>
+        <ProjectSlider
+          projects={projects}
+          error={projectsError}
+          onRetry={reload}
+          studioSlug={profile.slug}
+          studioName={profile.name}
+        />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <About data={aboutData} profile={profile} error={aboutError} hasTeam={hasTeam} />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <Team members={teamMembers} error={teamError} />
+      </div>
+      <div className="vertice-reveal" data-scroll-reveal>
+        <ContactSection
+          title="Contanos tu proyecto"
+          profile={profile}
+          profileId={profile.id}
+        />
+      </div>
     </>
   );
 }

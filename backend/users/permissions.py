@@ -85,7 +85,16 @@ class CanManageProject(permissions.BasePermission):
 
         # Si en un update/partial_update se envía `profile`, verificar que pertenezca al usuario
         if view.action in ['update', 'partial_update'] and 'profile' in request.data:
-            return _user_owns_profile(request.user, request.data.get('profile'))
+            if not _user_owns_profile(request.user, request.data.get('profile')):
+                return False
+
+        # La administración de Ubicación y Google Earth está reservada a ADMIN y OWNER del estudio
+        if (
+            view.action in ['update', 'partial_update']
+            and request.user.role == User.RoleChoices.COLLABORATOR
+            and ('google_earth_url' in request.data or 'location' in request.data)
+        ):
+            return False
 
         return True
 
@@ -184,27 +193,13 @@ class CanManageContact(permissions.BasePermission):
             return obj.profile.users.filter(id=request.user.id).exists()
 
         if request.user.role == User.RoleChoices.OWNER:
-            return obj.profile.users.filter(id=request.user.id).exists()
+            if not obj.profile.users.filter(id=request.user.id).exists():
+                return False
+            if view.action in ['update', 'partial_update'] and 'profile' in request.data:
+                return _user_owns_profile(request.user, request.data.get('profile'))
+            return True
 
         return False
-
-
-class CanManageBrand(permissions.BasePermission):
-    """
-    Catálogo global de marcas (Brand):
-    - Cualquier usuario puede listar o consultar marcas públicamente.
-    - Solo ADMIN de plataforma puede crear, editar o eliminar marcas globales.
-    - Los OWNER asocian marcas existentes a sus proyectos mediante ProjectSerializer.
-    """
-    def has_permission(self, request, view):
-        if view.action in ['list', 'retrieve']:
-            return True
-        return _is_platform_admin(request.user)
-
-    def has_object_permission(self, request, view, obj):
-        if view.action in ['list', 'retrieve']:
-            return True
-        return _is_platform_admin(request.user)
 
 
 class CanManageStudioContent(permissions.BasePermission):

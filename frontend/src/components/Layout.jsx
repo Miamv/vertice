@@ -126,7 +126,7 @@ export default function Layout() {
   return (
     <div className="d-flex flex-column min-vh-100">
       <Navbar studioContext={studioContext} />
-      <main className="flex-grow-1">
+      <main className={`flex-grow-1 ${!isPortfolioHome ? 'vertice-main--offset' : ''}`}>
         <Outlet context={outletValue} />
       </main>
       <Footer studioContext={studioContext} />
