@@ -167,6 +167,10 @@ export function getProfileBySlug(slug) {
   return api.get(`/profiles/by-slug/${encodeURIComponent(slug)}/`);
 }
 
+export function updateStudioProfile(idOrSlug, data) {
+  return api.patch(`/profiles/${encodeURIComponent(idOrSlug)}/`, data);
+}
+
 export function getAbout(params) {
   return params ? api.get('/about/', { params }) : api.get('/about/');
 }
@@ -221,6 +225,10 @@ export function getContacts(params) {
 
 export function sendContact(data) {
   return api.post('/contacts/', data);
+}
+
+export function updateContact(id, data) {
+  return api.patch(`/contacts/${id}/`, data);
 }
 
 export function deleteContact(id) {

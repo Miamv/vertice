@@ -65,6 +65,7 @@ export default function ProjectForm() {
     title: '',
     description: '',
     category: 'architecture',
+    order: 1,
     location: '',
     google_earth_url: '',
     profile: activeStudio?.id || '',
@@ -123,6 +124,7 @@ export default function ProjectForm() {
             title: p.title || '',
             description: p.description || '',
             category: p.category || 'architecture',
+            order: p.order ?? 1,
             location: p.location || '',
             google_earth_url: p.google_earth_url || '',
             profile: p.profile || activeStudio?.id || (profilesData[0]?.id ?? ''),
@@ -394,6 +396,7 @@ export default function ProjectForm() {
       title: formData.title.trim(),
       description: formData.description.trim(),
       category: formData.category,
+      order: Math.max(1, parseInt(formData.order, 10) || 1),
       location: formData.location.trim(),
       google_earth_url: formData.google_earth_url.trim(),
       profile: Number(formData.profile),
@@ -519,7 +522,7 @@ export default function ProjectForm() {
             </div>
 
             <div className="row g-3 mb-3">
-              <div className="col-md-6">
+              <div className="col-md-5">
                 <label htmlFor="category" className="form-label small fw-semibold">
                   Categoría <span className="text-danger">*</span>
                 </label>
@@ -547,7 +550,7 @@ export default function ProjectForm() {
                 )}
               </div>
 
-              <div className="col-md-6">
+              <div className="col-md-5">
                 <label htmlFor="profile" className="form-label small fw-semibold">
                   Estudio Profesional <span className="text-danger">*</span>
                 </label>
@@ -575,6 +578,33 @@ export default function ProjectForm() {
                     {Array.isArray(fieldErrors.profile)
                       ? fieldErrors.profile.join(' ')
                       : fieldErrors.profile}
+                  </div>
+                )}
+              </div>
+
+              <div className="col-md-2">
+                <label htmlFor="order" className="form-label small fw-semibold">
+                  Orden Visual
+                </label>
+                <input
+                  type="number"
+                  id="order"
+                  name="order"
+                  min="1"
+                  className={`form-control rounded-3 ${fieldErrors.order ? 'is-invalid' : ''}`}
+                  value={formData.order}
+                  onChange={handleChange}
+                  disabled={submitting || !isAdminOrOwner}
+                />
+                {fieldErrors.order ? (
+                  <div className="invalid-feedback small">
+                    {Array.isArray(fieldErrors.order)
+                      ? fieldErrors.order.join(' ')
+                      : fieldErrors.order}
+                  </div>
+                ) : (
+                  <div className="form-text" style={{ fontSize: '0.7rem' }}>
+                    1 = 1°, 2 = 2°...
                   </div>
                 )}
               </div>
