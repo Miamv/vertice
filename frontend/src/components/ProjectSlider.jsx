@@ -4,6 +4,12 @@ import { resolveMediaUrl } from '../services/api';
 import ProjectCard from './ProjectCard';
 
 const CATEGORY_LABELS = {
+  ARCHITECTURE: 'Arquitectura',
+  DESIGN: 'Diseño',
+  INTERIOR_DESIGN: 'Diseño Interior',
+  PHOTOGRAPHY: 'Fotografía',
+  RENDER: 'Render',
+  OTHER: 'Otro',
   RESIDENCIAL: 'Residencial',
   COMERCIAL: 'Comercial',
   OFICINAS: 'Oficinas',
@@ -14,6 +20,14 @@ const CATEGORY_LABELS = {
   URBANISMO: 'Urbanismo',
   OTRO: 'Arquitectura',
 };
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
 
 function formatProjectCategory(category) {
   if (!category) return '';
@@ -90,10 +104,14 @@ export default function ProjectSlider({
   studioSlug,
   studioName,
 }) {
-  const safeProjects = useMemo(
-    () => (Array.isArray(projects) ? projects : []),
-    [projects]
-  );
+  const safeProjects = useMemo(() => {
+    if (!Array.isArray(projects)) return [];
+    return [...projects].sort((a, b) => {
+      const orderA = Number(a?.order) || 1;
+      const orderB = Number(b?.order) || 1;
+      return orderA - orderB;
+    });
+  }, [projects]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -110,21 +128,23 @@ export default function ProjectSlider({
   }, [searchTerm]);
 
   const filteredProjects = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
+    const query = normalizeSearchText(debouncedSearch);
     if (!query) return safeProjects;
 
     return safeProjects.filter((project) => {
+      const categoryLabel = formatProjectCategory(project.category);
       return (
-        (project.title && project.title.toLowerCase().includes(query)) ||
-        (project.description && project.description.toLowerCase().includes(query)) ||
-        (project.category && project.category.toLowerCase().includes(query)) ||
-        (project.location && project.location.toLowerCase().includes(query))
+        normalizeSearchText(project.title).includes(query) ||
+        normalizeSearchText(project.description).includes(query) ||
+        normalizeSearchText(project.category).includes(query) ||
+        normalizeSearchText(categoryLabel).includes(query) ||
+        normalizeSearchText(project.location).includes(query)
       );
     });
   }, [safeProjects, debouncedSearch]);
 
   // Reinicia el índice al cambiar de estudio o de filtro de búsqueda
-  const filterScopeKey = `${studioSlug || '__root__'}:${debouncedSearch.trim().toLowerCase()}:${filteredProjects.length}`;
+  const filterScopeKey = `${studioSlug || '__root__'}:${normalizeSearchText(debouncedSearch)}:${filteredProjects.length}`;
   const [prevScopeKey, setPrevScopeKey] = useState(filterScopeKey);
   if (prevScopeKey !== filterScopeKey) {
     setPrevScopeKey(filterScopeKey);
@@ -285,10 +305,6 @@ export default function ProjectSlider({
     ? buildProjectDetailPath(activeProject, studioSlug)
     : '/';
 
-  const activeMediaCount = Array.isArray(activeProject?.media)
-    ? activeProject.media.length
-    : 0;
-
   const progressRatio = total > 0 ? ((safeActiveIndex + 1) / total) * 100 : 100;
 
   return (
@@ -430,33 +446,25 @@ export default function ProjectSlider({
                 <p className="vertice-slider__desc">{activeDescription}</p>
               )}
 
-              {(activeLocation || activeMediaCount > 0) && (
+              {activeLocation && (
                 <div className="vertice-slider__chips">
-                  {activeLocation && (
-                    <span className="vertice-slider__chip">
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                        <circle cx="12" cy="10" r="3" />
-                      </svg>
-                      {activeLocation}
-                    </span>
-                  )}
-                  {activeMediaCount > 0 && (
-                    <span className="vertice-slider__chip">
-                      {activeMediaCount}{' '}
-                      {activeMediaCount === 1 ? 'archivo técnico' : 'archivos técnicos'}
-                    </span>
-                  )}
+                  <span className="vertice-slider__chip">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    {activeLocation}
+                  </span>
                 </div>
               )}
 
