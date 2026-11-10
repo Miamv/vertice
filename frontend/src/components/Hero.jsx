@@ -7,7 +7,8 @@ export default function Hero({ profile }) {
   const [failedUrl, setFailedUrl] = useState(null);
   const scrollTo = useScrollTo();
   const avatarUrl = useMemo(() => resolveMediaUrl(profile?.avatar), [profile?.avatar]);
-  const heroImage = avatarUrl && failedUrl !== avatarUrl ? avatarUrl : studio.heroImage;
+  const avatarKey = `${profile?.slug || ''}:${avatarUrl || ''}`;
+  const heroImage = avatarUrl && failedUrl !== avatarKey ? avatarUrl : studio.heroImage;
   const studioTitle = profile?.name?.trim() || studio.platformName || 'Vértice';
   const basePath = profile?.slug ? `/estudios/${profile.slug}` : '/';
 
@@ -23,7 +24,7 @@ export default function Hero({ profile }) {
           src={heroImage}
           alt=""
           onError={() => {
-            if (heroImage === avatarUrl) setFailedUrl(avatarUrl);
+            if (heroImage === avatarUrl) setFailedUrl(avatarKey);
           }}
         />
         <span className="vertice-hero__wash" />

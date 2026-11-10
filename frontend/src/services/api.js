@@ -168,6 +168,11 @@ export function getProfileBySlug(slug) {
 }
 
 export function updateStudioProfile(idOrSlug, data) {
+  if (data instanceof FormData) {
+    return api.patch(`/profiles/${encodeURIComponent(idOrSlug)}/`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  }
   return api.patch(`/profiles/${encodeURIComponent(idOrSlug)}/`, data);
 }
 

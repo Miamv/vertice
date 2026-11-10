@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import {
   getProfiles,
@@ -185,6 +185,9 @@ export default function AdminDashboard() {
     instagram: '',
   });
   const [aboutImageFile, setAboutImageFile] = useState(null);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const avatarPreviewUrlRef = useRef(null);
   const [loadingAbout, setLoadingAbout] = useState(true);
   const [savingAbout, setSavingAbout] = useState(false);
 
@@ -202,6 +205,13 @@ export default function AdminDashboard() {
   // Feedback State
   const [feedback, setFeedback] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(
+    () => () => {
+      if (avatarPreviewUrlRef.current) URL.revokeObjectURL(avatarPreviewUrlRef.current);
+    },
+    []
+  );
 
   // Cargar perfiles autorizados del usuario autenticado
   useEffect(() => {
@@ -274,6 +284,18 @@ export default function AdminDashboard() {
       authorizedProfiles.find((p) => Number(p.id) === Number(selectedProfileId)) || null
     );
   }, [authorizedProfiles, selectedProfileId]);
+  const avatarPreviewUrl =
+    avatarPreview?.profileId === Number(activeProfile?.id)
+      ? avatarPreview.url
+      : resolveMediaUrl(activeProfile?.avatar);
+
+  function clearAvatarPreview() {
+    if (avatarPreviewUrlRef.current) {
+      URL.revokeObjectURL(avatarPreviewUrlRef.current);
+      avatarPreviewUrlRef.current = null;
+    }
+    setAvatarPreview(null);
+  }
 
   function handleSelectStudioChange(e) {
     const nextId = Number(e.target.value);
@@ -286,6 +308,8 @@ export default function AdminDashboard() {
     setAboutRecord(null);
     setAboutForm({ title: '', description: '' });
     setAboutImageFile(null);
+    setAvatarFile(null);
+    clearAvatarPreview();
     setLoadingProjects(true);
     setLoadingTeam(true);
     setLoadingAbout(true);
@@ -526,12 +550,20 @@ export default function AdminDashboard() {
 
     try {
       // 1. Actualizar datos de contacto y redes del estudio (ProfessionalProfile)
-      const profilePayload = {
+      const profileFields = {
         contact_email: (studioContactForm.contact_email || '').trim(),
         phone: (studioContactForm.phone || '').trim(),
         location: (studioContactForm.location || '').trim(),
         instagram: (studioContactForm.instagram || '').trim(),
       };
+      let profilePayload = profileFields;
+      if (avatarFile) {
+        profilePayload = new FormData();
+        Object.entries(profileFields).forEach(([field, value]) => {
+          profilePayload.append(field, value);
+        });
+        profilePayload.append('avatar', avatarFile);
+      }
       const profileRes = await updateStudioProfile(selectedProfileId, profilePayload);
       const updatedProfile = profileRes.data;
 
@@ -541,6 +573,8 @@ export default function AdminDashboard() {
       if (selectActiveStudio) {
         selectActiveStudio(updatedProfile);
       }
+      setAvatarFile(null);
+      clearAvatarPreview();
 
       // 2. Guardar o actualizar bloque institucional (StudioAbout) si fue completado o ya existe
       const hasAboutInput = Boolean(
@@ -571,7 +605,7 @@ export default function AdminDashboard() {
 
       setFeedback({
         type: 'success',
-        message: 'Información institucional y de contacto actualizada con éxito.',
+        message: 'Perfil e información institucional y de contacto actualizados correctamente.',
       });
     } catch (err) {
       const errData = err?.response?.data;
@@ -580,6 +614,7 @@ export default function AdminDashboard() {
         errData?.phone?.[0] ||
         errData?.location?.[0] ||
         errData?.instagram?.[0] ||
+        errData?.avatar?.[0] ||
         errData?.detail;
       setFeedback({
         type: 'danger',
@@ -1381,6 +1416,77 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <form onSubmit={handleSaveAbout} className="d-flex flex-column gap-4">
+              <div
+                className="card border-0 shadow-sm rounded-4 p-4"
+                style={{ background: '#fff', border: '1px solid rgba(15, 27, 42, 0.08)' }}
+              >
+                <div className="mb-3">
+                  <h2 className="h5 fw-bold mb-1">Imagen principal — {activeProfile.name}</h2>
+                  <p className="text-muted small mb-0">
+                    Esta imagen identifica al estudio en el Hero de su portada pública.
+                  </p>
+                </div>
+                <div className="d-flex flex-column flex-sm-row align-items-sm-center gap-3">
+                  {avatarPreviewUrl ? (
+                    <img
+                      src={avatarPreviewUrl}
+                      alt={`Avatar de ${activeProfile.name}`}
+                      className="rounded-3 border"
+                      style={{ width: '144px', height: '104px', objectFit: 'cover' }}
+                      onError={() =>
+                        setAvatarPreview({ profileId: Number(activeProfile.id), url: null })
+                      }
+                    />
+                  ) : (
+                    <div
+                      className="rounded-3 border d-flex align-items-center justify-content-center text-muted small"
+                      style={{ width: '144px', height: '104px', background: '#f8f9fa' }}
+                    >
+                      Sin avatar cargado
+                    </div>
+                  )}
+                  <div className="flex-grow-1">
+                    <label htmlFor="studioAvatar" className="form-label small fw-semibold">
+                      Seleccionar imagen
+                    </label>
+                    <input
+                      id="studioAvatar"
+                      type="file"
+                      accept="image/*"
+                      className="form-control rounded-3"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] || null;
+                        if (file && !file.type.startsWith('image/')) {
+                          setFeedback({ type: 'danger', message: 'El avatar debe ser un archivo de imagen.' });
+                          setAvatarFile(null);
+                          clearAvatarPreview();
+                          event.target.value = '';
+                          return;
+                        }
+                        if (file && file.size > 10 * 1024 * 1024) {
+                          setFeedback({ type: 'danger', message: 'La imagen no puede superar los 10 MiB.' });
+                          setAvatarFile(null);
+                          clearAvatarPreview();
+                          event.target.value = '';
+                          return;
+                        }
+                        setFeedback(null);
+                        setAvatarFile(file);
+                        clearAvatarPreview();
+                        if (file) {
+                          const previewUrl = URL.createObjectURL(file);
+                          avatarPreviewUrlRef.current = previewUrl;
+                          setAvatarPreview({ profileId: Number(selectedProfileId), url: previewUrl });
+                        }
+                      }}
+                    />
+                    <small className="text-muted d-block mt-1">
+                      Podés reemplazar la imagen actual. Tamaño máximo: 10 MiB.
+                    </small>
+                  </div>
+                </div>
+              </div>
+
               {/* Tarjeta 1: Información Institucional (Sección Nosotros) */}
               <div
                 className="card border-0 shadow-sm rounded-4 p-4"
