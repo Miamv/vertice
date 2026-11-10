@@ -44,6 +44,20 @@ class HealthCheckTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json(), {'status': 'ok', 'database': 'ok'})
 
+    def test_chrome_accept_header_returns_json_database_health(self):
+        response = self.client.get(
+            reverse('health-check'),
+            HTTP_ACCEPT=(
+                'text/html,application/xhtml+xml,application/xml;q=0.9,'
+                'image/avif,image/webp,image/apng,*/*;q=0.8,'
+                'application/signed-exchange;v=b3;q=0.7'
+            ),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'application/json')
+        self.assertEqual(response.json(), {'status': 'ok', 'database': 'ok'})
+
     def test_get_with_invalid_jwt_returns_database_health(self):
         response = self.client.get(
             reverse('health-check'),

@@ -4,6 +4,7 @@ from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
@@ -60,6 +61,7 @@ def _filter_by_profile_params(qs, request, prefix='profile'):
 class HealthCheckView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
+    renderer_classes = [JSONRenderer]
 
     @extend_schema(
         responses={
