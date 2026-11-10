@@ -1,8 +1,11 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import serializers, viewsets
+from django.db import DatabaseError, connection
+from drf_spectacular.utils import extend_schema, inline_serializer
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from .models import ProfessionalProfile, Project, Media, Contact, StudioAbout, TeamMember
 from .serializers import (
     ProfessionalProfileSerializer,
@@ -52,6 +55,42 @@ def _filter_by_profile_params(qs, request, prefix='profile'):
             return qs.none()
 
     return qs
+
+
+class HealthCheckView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        responses={
+            status.HTTP_200_OK: inline_serializer(
+                name='HealthCheckResponse',
+                fields={
+                    'status': serializers.CharField(),
+                    'database': serializers.CharField(),
+                },
+            ),
+            status.HTTP_503_SERVICE_UNAVAILABLE: inline_serializer(
+                name='HealthCheckUnavailableResponse',
+                fields={
+                    'status': serializers.CharField(),
+                    'database': serializers.CharField(),
+                },
+            ),
+        },
+    )
+    def get(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+                cursor.fetchone()
+        except DatabaseError:
+            return Response(
+                {'status': 'error', 'database': 'unavailable'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({'status': 'ok', 'database': 'ok'})
 
 
 class ProfessionalProfileViewSet(viewsets.ModelViewSet):

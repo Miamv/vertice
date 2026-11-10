@@ -1,11 +1,15 @@
 import shutil
 import tempfile
+from unittest.mock import patch
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.test import TestCase, RequestFactory, override_settings
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
 
 from .admin import (
     CustomUserCreationForm,
@@ -31,6 +35,39 @@ VALID_GIF = (
     b'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!'
     b'\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x01D\x00;'
 )
+
+
+class HealthCheckTestCase(APITestCase):
+    def test_get_without_authentication_returns_database_health(self):
+        response = self.client.get(reverse('health-check'))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'status': 'ok', 'database': 'ok'})
+
+    def test_get_with_invalid_jwt_returns_database_health(self):
+        response = self.client.get(
+            reverse('health-check'),
+            HTTP_AUTHORIZATION='Bearer invalid.token.value',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json(), {'status': 'ok', 'database': 'ok'})
+
+    @patch('core.views.connection.cursor', side_effect=DatabaseError('internal database detail'))
+    def test_database_error_returns_generic_service_unavailable(self, _mock_cursor):
+        response = self.client.get(reverse('health-check'))
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.json(),
+            {'status': 'error', 'database': 'unavailable'},
+        )
+        self.assertNotIn(b'internal database detail', response.content)
+
+    def test_health_check_only_accepts_get(self):
+        response = self.client.post(reverse('health-check'), {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
 
 class UserAdminFormsTestCase(TestCase):

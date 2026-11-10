@@ -403,6 +403,62 @@ class RolePermissionTestCase(APITestCase):
         )
         self.assertEqual(own_team_res.status_code, status.HTTP_201_CREATED)
 
+    def test_profile_avatar_upload_and_replacement_respect_studio_permissions(self):
+        own_upload = self.client.patch(
+            f'/api/profiles/{self.profile.slug}/',
+            {'avatar': SimpleUploadedFile('avatar-inicial.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(own_upload.status_code, status.HTTP_200_OK)
+        self.assertTrue(own_upload.data['avatar'].startswith('http'))
+        self.assertTrue(own_upload.data['avatar'].endswith('.gif'))
+        first_avatar_name = self.profile.__class__.objects.get(pk=self.profile.pk).avatar.name
+
+        replacement = self.client.patch(
+            f'/api/profiles/{self.profile.slug}/',
+            {'avatar': SimpleUploadedFile('avatar-reemplazo.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(replacement.status_code, status.HTTP_200_OK)
+        self.assertTrue(replacement.data['avatar'].endswith('.gif'))
+        self.assertNotEqual(replacement.data['avatar'], own_upload.data['avatar'])
+        current_avatar_name = self.profile.__class__.objects.get(pk=self.profile.pk).avatar.name
+        self.assertNotEqual(current_avatar_name, first_avatar_name)
+
+        foreign_upload = self.client.patch(
+            f'/api/profiles/{self.other_profile.pk}/',
+            {'avatar': SimpleUploadedFile('avatar-ajeno.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.owner_one),
+        )
+        self.assertEqual(foreign_upload.status_code, status.HTTP_403_FORBIDDEN)
+
+        collaborator_upload = self.client.patch(
+            f'/api/profiles/{self.profile.slug}/',
+            {'avatar': SimpleUploadedFile('avatar-colaborador.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.collab_one),
+        )
+        self.assertEqual(collaborator_upload.status_code, status.HTTP_403_FORBIDDEN)
+
+        viewer_upload = self.client.patch(
+            f'/api/profiles/{self.profile.slug}/',
+            {'avatar': SimpleUploadedFile('avatar-viewer.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.viewer),
+        )
+        self.assertEqual(viewer_upload.status_code, status.HTTP_403_FORBIDDEN)
+
+        admin_upload = self.client.patch(
+            f'/api/profiles/{self.other_profile.slug}/',
+            {'avatar': SimpleUploadedFile('avatar-admin.gif', VALID_GIF, content_type='image/gif')},
+            format='multipart',
+            **self._auth(self.admin),
+        )
+        self.assertEqual(admin_upload.status_code, status.HTTP_200_OK)
+
     def test_profile_visibility_by_role_admin_owner_collaborator_viewer(self):
         # 1. ADMIN ve todos los estudios en el listado
         admin_list = self.client.get('/api/profiles/', **self._auth(self.admin))
